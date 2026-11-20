@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metinden 3B Model</title>
+<meta name="description" content="Basit Türkçe tarifle 3B baskıya hazır model: kasa, kanca, dişli, isimlik ve daha fazlası. Tarayıcıda çalışır.">
+<style>
+  :root {
+    --zemin: #f4f6f9; --kart: #ffffff; --metin: #18202b; --soluk: #5a6676; --cizgi: #dfe4ea;
+    --vurgu: #2f6fed; --vurgu-acik: #e8f0ff; --vurgu-metin: #ffffff; --iyi: #1d8a4e; --uyari: #b26b00; --kotu: #c62b2b;
+    --sahne: #e9edf2; --golge: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 16px rgba(16, 24, 40, .06);
+    --yaricap: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --zemin: #0f1217; --kart: #171b22; --metin: #e8ecf2; --soluk: #9aa5b4; --cizgi: #2a313c;
+      --vurgu: #5b8cff; --vurgu-acik: #1c2a47; --vurgu-metin: #0b1020; --iyi: #48c27d; --uyari: #e3a33b; --kotu: #ff6b6b;
+      --sahne: #12161c; --golge: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --zemin: #0f1217; --kart: #171b22; --metin: #e8ecf2; --soluk: #9aa5b4; --cizgi: #2a313c;
+    --vurgu: #5b8cff; --vurgu-acik: #1c2a47; --vurgu-metin: #0b1020; --iyi: #48c27d; --uyari: #e3a33b; --kotu: #ff6b6b;
+    --sahne: #12161c; --golge: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--zemin); color: var(--metin); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--cizgi); background: var(--kart); }
+  header h1 { font-size: 19px; margin: 0; letter-spacing: -.01em; }
+  header .alt { color: var(--soluk); font-size: 14px; }
+  header .bosluk { flex: 1; }
+  #pyDurum { font-size: 13px; color: var(--soluk); white-space: nowrap; }
+  /* minmax(0, ...): tuvalin eski genisligi sutunu itip sayfayi yana kaydirmasin */
+  main { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: 20px; padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
+  main > * { min-width: 0; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; } header { padding: 12px 16px; } header .alt { display: none; } }
+  .kart { background: var(--kart); border: 1px solid var(--cizgi); border-radius: var(--yaricap); padding: 18px; box-shadow: var(--golge); }
+  .kart + .kart { margin-top: 16px; }
+  .kart h2 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .adim { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--vurgu-acik);
+    color: var(--vurgu); font-size: 13px; font-weight: 700; }
+  .ipucu { color: var(--soluk); font-size: 14px; margin: 6px 0 0; }
+  textarea, input, select { font: inherit; color: var(--metin); background: var(--zemin); border: 1px solid var(--cizgi);
+    border-radius: 10px; padding: 10px 12px; width: 100%; }
+  textarea { min-height: 92px; resize: vertical; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--vurgu); outline-offset: 0; border-color: transparent; }
+  button { font: inherit; font-weight: 600; border-radius: 10px; border: 1px solid var(--cizgi); background: var(--kart); color: var(--metin);
+    padding: 9px 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  button:hover { border-color: var(--vurgu); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ana { background: var(--vurgu); color: var(--vurgu-metin); border-color: var(--vurgu); }
+  button.ana:hover { filter: brightness(1.07); }
+  button.secik { background: var(--vurgu-acik); border-color: var(--vurgu); color: var(--vurgu); }
+  .genis { width: 100%; margin-top: 10px; padding: 12px; font-size: 16px; }
+  .ornekler { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .ornekler button { font-weight: 500; font-size: 14px; padding: 6px 10px; border-radius: 999px; background: var(--zemin); }
+  .izgara2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .izgara3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  label.alan { display: block; font-size: 14px; color: var(--soluk); }
+  label.alan > input, label.alan > select { margin-top: 4px; color: var(--metin); }
+  .secenekler { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+  .secenekler label { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; }
+  .secenekler input { width: auto; }
+  .ara { height: 1px; background: var(--cizgi); margin: 14px 0; }
+  .port { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--cizgi);
+    border-radius: 10px; margin-top: 6px; font-size: 14px; }
+  .port.secik { border-color: var(--vurgu); background: var(--vurgu-acik); }
+  .port button { padding: 4px 9px; font-size: 13px; }
+  #gecmis { list-style: none; padding: 0; margin: 0; }
+  #gecmis li { padding: 8px 10px; border-radius: 10px; cursor: pointer; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
+  #gecmis li:hover { background: var(--zemin); }
+  #gecmis li small { color: var(--soluk); flex: 0 0 auto; }
+  #gecmis li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* sag: onizleme */
+  .sag { min-width: 0; }
+  #sahneKutu { position: sticky; top: 16px; }
+  #sahne { position: relative; height: calc(100vh - 230px); min-height: 380px; border-radius: var(--yaricap); overflow: hidden;
+    background: var(--sahne); border: 1px solid var(--cizgi); touch-action: none; }
+  @media (max-width: 900px) { #sahneKutu { position: static; } #sahne { height: 62vh; min-height: 320px; } }
+  #sahne canvas { display: block; width: 100%; height: 100%; }
+  #bos { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--soluk); padding: 24px; pointer-events: none; }
+  #olcuYazi { position: absolute; left: 14px; top: 12px; font-size: 14px; font-weight: 600; color: var(--soluk);
+    background: color-mix(in srgb, var(--kart) 80%, transparent); padding: 4px 10px; border-radius: 8px; pointer-events: none; }
+  .arac { position: absolute; right: 12px; top: 12px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 70%; }
+  .arac button { background: color-mix(in srgb, var(--kart) 92%, transparent); box-shadow: var(--golge); font-size: 14px; padding: 7px 12px; }
+  .arac button.secik, .arac button.ana { background: var(--vurgu); color: var(--vurgu-metin); border-color: var(--vurgu); }
+  #duzenAraclari { position: absolute; left: 12px; bottom: 12px; right: 12px; display: none; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: color-mix(in srgb, var(--kart) 94%, transparent); border: 1px solid var(--cizgi); border-radius: 12px; padding: 8px 10px;
+    box-shadow: var(--golge); font-size: 14px; }
+  #duzenAraclari.acik { display: flex; }
+  #duzenAraclari select { width: auto; padding: 6px 8px; font-size: 14px; }
+  #duzenAraclari button { padding: 6px 10px; font-size: 14px; }
+  #duzenNot { color: var(--soluk); flex: 1 1 200px; }
+  /* dar ekran: arac dugmeleri yalniz simge, duzen cubugu ince */
+  @media (max-width: 560px) {
+    .arac { max-width: none; left: 12px; }
+    .arac .yazi { display: none; }
+    .arac button { padding: 7px 10px; font-size: 15px; }
+    #duzenAraclari { left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; gap: 6px; font-size: 13px; }
+    #duzenNot { flex-basis: 100%; }
+    #olcuYazi { top: 54px; font-size: 12px; }
+  }
+  #yukleniyor { position: absolute; inset: 0; display: none; place-items: center; background: color-mix(in srgb, var(--sahne) 55%, transparent);
+    font-weight: 600; pointer-events: none; }
+  #yukleniyor.acik { display: grid; }
+  .donen { width: 28px; height: 28px; border: 3px solid var(--cizgi); border-top-color: var(--vurgu); border-radius: 50%;
+    animation: don 0.8s linear infinite; margin: 0 auto 10px; }
+  @keyframes don { to { transform: rotate(360deg); } }
+  #ipucuBalon { position: absolute; pointer-events: none; background: var(--metin); color: var(--kart); font-size: 13px; font-weight: 600;
+    padding: 4px 8px; border-radius: 6px; transform: translate(12px, -28px); display: none; white-space: nowrap; }
+  .etiket { position: absolute; transform: translate(-50%, -50%); background: var(--vurgu); color: #fff; font: 600 13px/1 system-ui, sans-serif;
+    padding: 6px 10px; border-radius: 999px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.3); white-space: nowrap; user-select: none; }
+  .etiket.arkada { opacity: .4; }
+  /* duzenle modunda etiketler tutamaklarin ustune binmesin */
+  #sahne.duzen .etiket { pointer-events: none; opacity: .25; }
+  .etiket.secik { background: #e8590c; outline: 2px solid #fff; }
+  /* komut satiri */
+  #komutKart { margin-top: 12px; }
+  .komut { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .komut input { flex: 999 1 220px; min-width: 0; }
+  .komut select { flex: 1 1 150px; width: auto; }
+  .komut button { flex: 0 0 auto; }
+  #durum { margin-top: 8px; font-size: 14px; color: var(--soluk); min-height: 1.4em; }
+  #durum.iyi { color: var(--iyi); } #durum.uyari { color: var(--uyari); } #durum.kotu { color: var(--kotu); }
+  dialog { border: 1px solid var(--cizgi); border-radius: var(--yaricap); background: var(--kart); color: var(--metin); width: min(900px, 94vw); padding: 0; }
+  dialog pre { margin: 0; padding: 16px; max-height: 70vh; overflow: auto; font-size: 13px; background: var(--zemin); }
+  dialog .baslik { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--cizgi); }
+  .rozet { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--vurgu-acik); color: var(--vurgu); }
+  footer { color: var(--soluk); font-size: 13px; text-align: center; padding: 8px 16px 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Metinden 3B Model</h1>
+  <span class="alt">Tarif yaz → düzenle → STL indir. Tarayıcında çalışır, kurulum yok.</span>
+  <span class="bosluk"></span>
+  <span id="pyDurum">Hazırlanıyor…</span>
+</header>
+<main>
+  <div class="sol">
+    <section class="kart">
+      <h2><span class="adim">1</span> Ne yapalım?</h2>
+      <textarea id="tarif" placeholder="Örnek: mac mini için kasa, önden takılsın, yanları altıgen havalandırmalı, arkada 2 usb-c ve bir hdmi"></textarea>
+      <button class="ana genis" id="olustur" disabled>Oluştur</button>
+      <div class="ornekler" id="ornekler"></div>
+    </section>
+
+    <section class="kart" id="ayarKart" hidden>
+      <h2><span class="adim">2</span> Ayarlar <span class="rozet" id="ayarTur"></span></h2>
+      <div id="ayarIcerik"></div>
+    </section>
+
+    <section class="kart">
+      <h2>Geçmiş</h2>
+      <ul id="gecmis"></ul>
+      <p class="ipucu" id="gecmisBos">Henüz model yok. Modeller yalnızca bu tarayıcıda saklanır.</p>
+    </section>
+  </div>
+
+  <div class="sag">
+    <div id="sahneKutu">
+      <div id="sahne">
+        <div id="bos">Model oluşturunca 3B önizleme burada görünür.<br>Sürükle: döndür · Tekerlek: yakınlaştır · Sağ tuş: kaydır</div>
+        <div id="olcuYazi" hidden></div>
+        <div id="etiketler"></div>
+        <div class="arac">
+          <button id="duzenModu" title="Çerçeveyi ve delikleri sürükleyerek düzenle" disabled>✎<span class="yazi"> Düzenle</span></button>
+          <button id="sigdir" title="Görünümü modele sığdır" disabled>⤢<span class="yazi"> Sığdır</span></button>
+          <button id="kodGoster" title="OpenSCAD kodunu göster" disabled>&lt;/&gt;<span class="yazi"> Kod</span></button>
+          <button id="stlIndir" class="ana" title="Baskı için STL dosyasını indir" disabled>⬇<span class="yazi"> STL</span></button>
+        </div>
+        <div id="duzenAraclari">
+          <span id="duzenNot">Turuncu tutamakları sürükle.</span>
+          <span id="delikAraclari" hidden>
+            <select id="yeniDelik" title="Eklenecek açıklık">
+              <option value="daire,10,10">Yuvarlak Ø10</option><option value="daire,20,20">Yuvarlak Ø20</option>
+              <option value="dikdortgen,13,6">USB 13×6</option><option value="dikdortgen,10,4">USB-C 10×4</option>
+              <option value="dikdortgen,16,7">HDMI 16×7</option><option value="dikdortgen,16,14">Ethernet 16×14</option>
+            </select>
+            <button id="delikEkle" title="Sonra bir yüze tıkla">+ Delik ekle</button>
+            <button id="delikSil" disabled title="Seçili deliği sil (Delete)">Sil</button>
+          </span>
+        </div>
+        <div id="yukleniyor"><div><div class="donen"></div><span id="yukleniyorYazi">Hazırlanıyor…</span></div></div>
+        <div id="ipucuBalon"></div>
+      </div>
+      <section class="kart" id="komutKart">
+        <div class="komut">
+          <select id="bolgeSec" hidden title="Düzenlenecek bölge">
+            <option value="">Bölge: komuttan anla</option>
+            <option value="kapak">1 · Kapak / üst</option><option value="on">2 · Ön</option><option value="arka">3 · Arka</option>
+            <option value="sol">4 · Sol</option><option value="sag">5 · Sağ</option><option value="genel">Tüm kasa</option>
+          </select>
+          <input id="komut" type="text" placeholder="Komutla düzenle: örn. petek ekle · 20 mm yuvarlak delik aç · 5 delikli yap" disabled>
+          <button id="komutUygula" disabled>Uygula</button>
+        </div>
+        <div id="durum">Model yok.</div>
+      </section>
+    </div>
+  </div>
+</main>
+<footer>Kasa ve hazır nesneler tarayıcıda kurallarla üretilir; OpenSCAD (WebAssembly) ile derlenir. Serbest tarifler, dilimleme ve yazıcı kontrolü yazıcının yanındaki bilgisayardaki uygulamadadır.</footer>
+
+<dialog id="kodPencere">
+  <div class="baslik"><strong>OpenSCAD kodu</strong><button id="kodKapat">Kapat</button></div>
+  <pre id="kodMetin"></pre>
+</dialog>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
