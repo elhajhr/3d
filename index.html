@@ -117,6 +117,8 @@
   .etiket.arkada { opacity: .4; }
   /* duzenle modunda etiketler tutamaklarin ustune binmesin */
   #sahne.duzen .etiket { pointer-events: none; opacity: .25; }
+  .delikNo { position: absolute; transform: translate(-50%, -140%); background: #e8590c; color: #fff; font: 700 11px/1 system-ui, sans-serif;
+    padding: 3px 6px; border-radius: 6px; pointer-events: none; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
   .etiket.secik { background: #e8590c; outline: 2px solid #fff; }
   /* komut satiri */
   #komutKart { margin-top: 12px; }
@@ -267,6 +269,7 @@
           <button id="duzenModu" title="Çerçeveyi ve delikleri sürükleyerek düzenle" disabled>✎<span class="yazi"> Düzenle</span></button>
           <button id="sigdir" title="Görünümü modele sığdır" disabled>⤢<span class="yazi"> Sığdır</span></button>
           <button id="alttan" title="Modele alttan bak / üste dön (alt yüzü düzenlemek için)" disabled>⤓<span class="yazi"> Alttan</span></button>
+          <button id="delikGoster" title="Deliklerin yerini numarasıyla göster" disabled>▦<span class="yazi"> Delikler</span></button>
           <button id="kodGoster" title="OpenSCAD kodunu göster" disabled>&lt;/&gt;<span class="yazi"> Kod</span></button>
           <button id="stlIndir" class="ana" title="Baskı için STL dosyasını indir" disabled>⬇<span class="yazi"> STL</span></button>
         </div>
@@ -275,6 +278,8 @@
           <span id="delikAraclari" hidden>
             <select id="yeniDelik" title="Eklenecek açıklık">
               <option value="daire,10,10">Yuvarlak Ø10</option><option value="daire,20,20">Yuvarlak Ø20</option>
+              <option value="kare,10,10">Kare 10×10</option><option value="altigen,10,10">Altıgen Ø10</option>
+              <option value="ucgen,12,12">Üçgen Ø12</option><option value="yildiz,15,15">Yıldız Ø15</option><option value="kalp,15,15">Kalp 15</option>
               <option value="dikdortgen,13,6">USB 13×6</option><option value="dikdortgen,10,4">USB-C 10×4</option>
               <option value="dikdortgen,16,7">HDMI 16×7</option><option value="dikdortgen,16,14">Ethernet 16×14</option>
             </select>

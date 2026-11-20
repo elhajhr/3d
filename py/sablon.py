@@ -261,6 +261,32 @@ def _pay_v(fv, pay, cap, duvar):
     return min(pay, max(duvar + 2, (fv - cap) / 2))
 
 
+def _yildiz_2b(g, kose=5, ic=0.42):
+    r = g / 2
+    nok = [(r * (1 if i % 2 == 0 else ic) * math.cos(math.radians(90 + i * 180 / kose)),
+            r * (1 if i % 2 == 0 else ic) * math.sin(math.radians(90 + i * 180 / kose))) for i in range(2 * kose)]
+    return "polygon([%s]);" % ", ".join("[%.3f, %.3f]" % q for q in nok)
+
+
+def _kalp_2b(g):
+    # klasik kalp egrisi, genisligi g olacak sekilde olceklenir
+    nok = [(16 * math.sin(t) ** 3, 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t))
+           for t in [i * 2 * math.pi / 48 for i in range(48)]]
+    k = g / 32.0
+    return "polygon([%s]);" % ", ".join("[%.3f, %.3f]" % (x * k, y * k + 0.5 * k) for x, y in nok)
+
+
+# kasada acilabilen delik sekilleri (genislik = g; dikdortgen/kare ayri: g x y)
+SEKIL_2B = {
+    "daire": lambda g: "circle(d = %g, $fn = 48);" % g,
+    "altigen": lambda g: "circle(d = %g, $fn = 6);" % g,
+    "ucgen": lambda g: "rotate(90) circle(d = %g, $fn = 3);" % g,
+    "yildiz": _yildiz_2b,
+    "kalp": _kalp_2b,
+}
+SIMETRIK = set(SEKIL_2B)  # bunlarda y = g
+
+
 def _acikliklar_2b(liste, fu, fv, petek_cap, petek_ara, pay, donuk=False, pay_v=None):
     # bir yuzun 2B kesim sekilleri: petek altigenleri + port acikliklari (dikdortgen ya da daire). Doner: (metin, delik)
     # donuk: baski durusunda bu yuzun u ekseni dikey kalacak (onu/arkasi acik kasa, acik yuzu yukari basilir);
@@ -278,8 +304,8 @@ def _acikliklar_2b(liste, fu, fv, petek_cap, petek_ara, pay, donuk=False, pay_v=
         parcalar += ["translate([%g, %g]) rotate(%d) circle(d = %g, $fn = 6);" % (u, v, 30 if donuk else 0, petek_cap)
                      for u, v in merkez]
     for p in liste["portlar"]:
-        if p.get("sekil") == "daire":
-            parcalar.append("translate([%g, %g]) circle(d = %g);" % (p["u"], p["v"], p["g"]))
+        if p.get("sekil") in SEKIL_2B:
+            parcalar.append("translate([%g, %g]) %s" % (p["u"], p["v"], SEKIL_2B[p["sekil"]](float(p["g"]))))
         else:
             pr = min(1.5, p["g"] / 2 - 0.01, p["y"] / 2 - 0.01)
             parcalar.append("translate([%g, %g]) offset(r = %g) square([%g, %g], center = true);"
@@ -302,9 +328,9 @@ def acikliklari_coz(cihaz, bosluk=0.6, duvar=2.5, kapak="yok", portlar=()):
     for p in portlar:
         fu, fv = boy(p["yuz"])
         q = {k: v for k, v in p.items() if k != "sira"}
-        q["sekil"] = "daire" if p.get("sekil") == "daire" else "dikdortgen"
+        q["sekil"] = p.get("sekil") if p.get("sekil") in SIMETRIK else "dikdortgen"
         q["g"] = float(p["g"])
-        q["y"] = q["g"] if q["sekil"] == "daire" else float(p.get("y") or p["g"])
+        q["y"] = q["g"] if q["sekil"] in SIMETRIK else float(p.get("y") or p["g"])
         q["u"] = None if p.get("u") is None else float(p["u"])
         q["v"] = round(fv / 2, 1) if p.get("v") is None else float(p["v"])
         cozulen.append(q)
@@ -484,6 +510,92 @@ def bolge_bul(t):
     return None
 
 
+def _sekil_bul(t):
+    for desen, ad in ((r"\bkare", "kare"), (r"dikdörtgen|dikdortgen", "dikdortgen"), (r"altıgen|altigen", "altigen"),
+                      (r"üçgen|ucgen", "ucgen"), (r"yıldız|yildiz", "yildiz"), (r"\bkalp", "kalp"),
+                      (r"yuvarlak|daire|dairesel", "daire")):
+        if re.search(desen, t):
+            return ad
+    return None
+
+
+def _boyut_oku(t, varsayilan):
+    # "AxB mm" degil, tek basina "15 mm" ya da "15 mm'lik"; "soldan 20 mm" gibi konum sayilarini atla
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*mm", t):
+        once = t[max(0, m.start() - 8):m.start()]
+        sonra = t[m.end():m.end() + 12]
+        if re.search(r"(soldan|sağdan|sagdan|alttan|üstten|ustten|kenardan)\s*$", once) or re.match(r"['’]?\w*\s*(sonra|ileri|içeri)", sonra) \
+                or re.match(r"\s*x", sonra) or re.search(r"x\s*$", once):
+            continue
+        return float(m[1])
+    return varsayilan
+
+
+def _sekilli(sekil, g):
+    if sekil == "kare":
+        return {"sekil": "dikdortgen", "g": g, "y": g}
+    if sekil == "dikdortgen":
+        return {"sekil": "dikdortgen", "g": round(g * 1.6, 1), "y": g}
+    return {"sekil": sekil, "g": g, "y": g}
+
+
+SEKIL_AD = {"daire": "yuvarlak", "altigen": "altıgen", "ucgen": "üçgen", "yildiz": "yıldız", "kalp": "kalp"}
+
+
+def _aciklik_ad(q):
+    if q["sekil"] == "dikdortgen":
+        return ("%g mm kare" % q["g"]) if q["g"] == q["y"] else "%gx%g mm dikdörtgen" % (q["g"], q["y"])
+    return "Ø%g %s" % (q["g"], SEKIL_AD.get(q["sekil"], q["sekil"]))
+
+
+def _aciklik_yazi(q):
+    # nerede oldugunu soyle: kenarlardan uzaklik (deligin kenarina)
+    return "%s, sol kenardan %.1f mm, alt kenardan %.1f mm" % (_aciklik_ad(q), q["u"] - q["g"] / 2, q["v"] - q["y"] / 2)
+
+
+def _konum_oku(t):
+    k = {}
+    for ad, desen in (("sol", r"soldan\s*(\d+(?:\.\d+)?)\s*mm|(\d+(?:\.\d+)?)\s*mm\w*\s*(?:den|dan|'den|'dan)?\s*sonra"),
+                      ("sag", r"sağdan\s*(\d+(?:\.\d+)?)\s*mm"), ("alt", r"alttan\s*(\d+(?:\.\d+)?)\s*mm"),
+                      ("ust", r"üstten\s*(\d+(?:\.\d+)?)\s*mm|yukarıdan\s*(\d+(?:\.\d+)?)\s*mm")):
+        m = re.search(desen, t)
+        if m:
+            k[ad] = float(next(x for x in m.groups() if x))
+    return k
+
+
+def _yuz_boyu(f, yuz):
+    W, D, H = dis_olcu([float(x) for x in f["cihaz"]], float(f.get("bosluk") or 0.6), float(f.get("duvar") or 2.5),
+                       f.get("kapak", "yok"))
+    return (W, D) if yuz in ("ust", "kapak", "alt") else _yuz(yuz, W, D, H, float(f.get("duvar") or 2.5))[1:]
+
+
+def _rastgele_yerlestir(f, yuz, n, tek, deneme=4000):
+    """Yuzde rastgele, birbirine ve mevcut acikliklara 2 mm'den yakin olmayan n delik. Tohum sabit: ayni komut ayni
+    yerlesimi verir (begenilmezse 'rastgele' tekrar yazilir, tohum degisir)."""
+    import random
+    fu, fv = _yuz_boyu(f, yuz)
+    duvar = float(f.get("duvar") or 2.5)
+    kenar = duvar + 2 + (14 if yuz == "alt" and f.get("ayak") else 0)
+    g, y = float(tek["g"]), float(tek["y"])
+    cozulmus = acikliklari_coz([float(x) for x in f["cihaz"]], float(f.get("bosluk") or 0.6), duvar, f.get("kapak", "yok"),
+                               f["portlar"])
+    var = [(q["u"], q["v"], q["g"], q["y"]) for q in cozulmus if q["yuz"] == yuz or (yuz == "ust" and q["yuz"] == "kapak")]
+    rnd = random.Random(len(f["portlar"]) * 7919 + n)
+    konan = []
+    for _ in range(deneme):
+        if len(konan) >= n:
+            break
+        if fu - 2 * kenar < g or fv - 2 * kenar < y:
+            break
+        u = rnd.uniform(kenar + g / 2, fu - kenar - g / 2)
+        v = rnd.uniform(kenar + y / 2, fv - kenar - y / 2)
+        if all(abs(u - a) >= (g + c) / 2 + 2 or abs(v - b) >= (y + d) / 2 + 2 for a, b, c, d in var):
+            var.append((u, v, g, y))
+            konan.append(dict(tek, yuz=yuz, u=round(u, 1), v=round(v, 1), sabit=True))
+    return konan
+
+
 def bolge_duzenle(form, komut, bolge=None):
     """form: kasa ayar formu (uygulama.kasa_formu ciktisi). komut: Turkce, olculer mm'ye cevrilmis.
     bolge: "kapak", "on", "arka", "sol", "sag", "genel" ya da None (komuttan bulunur).
@@ -498,7 +610,11 @@ def bolge_duzenle(form, komut, bolge=None):
     f.setdefault("portlar", [])
     f["petek"] = list(f.get("petek") or [])
     sil = bool(re.search(_SIL, t))
+    rastgele = bool(re.search(r"rastgele|rasgele|random|dağınık|daginik|gelişigüzel|gelisiguzel|serpiştir|serpistir|karışık", t))
     petek_soz = bool(re.search(r"altıgen|altigen|petek|havalandır|havalandir|hava delik", t))
+    # "rastgele 10 altigen delik", "3 tane 8 mm altigen delik": petek degil, tek tek delik
+    if petek_soz and not re.search(r"petek|havalandır|havalandir", t) and (rastgele or re.search(r"\d+\s*(?:tane|mm)|\b(?:bir|iki|üç|dört|beş)\s+(?:tane\s+)?(?:[\d.]+\s*mm\s+)?altıgen", t)):
+        petek_soz = False
 
     # kapak bolgesi kasa uzerinde "ust" yuzu: kapakli kutuda ust portlari ve petegi kapaga gider
     yuz = "ust" if bolge == "kapak" else bolge
@@ -597,6 +713,35 @@ def bolge_duzenle(form, komut, bolge=None):
         yeni += [{"sekil": "daire", "g": c, "y": c}] * adet_al(m[1])
     for m in re.finditer(r"(?:(\d+|bir|iki|üç|dört)\s+(?:tane\s+)?)?(\d+(?:\.\d+)?)\s*(?:mm)?\s*x\s*(\d+(?:\.\d+)?)\s*mm", t):
         yeni += [{"sekil": "dikdortgen", "g": float(m[2]), "y": float(m[3])}] * adet_al(m[1])
+    # sekil adiyla: "3 tane 10 mm kare delik", "yildiz seklinde delik", "15 mm kalp", "altigen delik ac"
+    if not yeni and not rastgele:
+        sekil = _sekil_bul(t)
+        if sekil and sekil != "daire" and re.search(r"delik|açıklık|aciklik|boşluk|bosluk|oyuk|pencere|aç\b|ekle|kes", t):
+            g = _boyut_oku(t, 10)
+            m = re.search(r"(\d+|bir|iki|üç|dört|beş|altı)(?!\s*mm)\s+(?:tane\s+)?(?:[\d.]+\s*mm\w*\s+)?(?:\w+\s+){0,1}?(?:kare|dikdörtgen|dikdortgen|altıgen|altigen|üçgen|ucgen|yıldız|yildiz|kalp)", t)
+            n = adet_al(m[1]) if m and not m[1].replace(".", "").isdigit() or (m and int(m[1]) < 50) else 1
+            yeni += [_sekilli(sekil, g)] * n
+    # rastgele dagit: "arkaya rastgele 10 delik", "ön yüze dağınık 6 tane 8 mm kare delik"
+    if rastgele and not sil:
+        kapak_gerekli()
+        if yuz == f.get("acik") and bolge != "kapak":
+            raise ValueError("%s yüz açık (cihaz buradan giriyor); oraya delik açılamaz." % BOLGE_ADLARI[bolge])
+        sekil = _sekil_bul(t) or "daire"
+        m = re.search(r"\b(\d+|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yirmi)(?![\d.]*\s*(?:mm|x))(?!\d)\s*(?:tane|adet)?\s*(?:[\w.]+\s+){0,3}?(?:delik|açıklık|aciklik|kare|daire|yuvarlak|altıgen|altigen|üçgen|ucgen|yıldız|yildiz|kalp)", t)
+        sayi = {"bir": 1, "iki": 2, "üç": 3, "dört": 4, "beş": 5, "altı": 6, "yedi": 7, "sekiz": 8, "dokuz": 9, "on": 10, "yirmi": 20}
+        n = int(m[1]) if m and m[1].isdigit() else sayi.get(m[1], 5) if m else 5
+        n = max(1, min(n, 200))
+        dikd = re.search(r"(\d+(?:\.\d+)?)\s*(?:mm)?\s*x\s*(\d+(?:\.\d+)?)\s*mm", t)
+        tek = dict(_sekilli(sekil, _boyut_oku(t, 6)))
+        if dikd:
+            tek = {"sekil": "dikdortgen", "g": float(dikd[1]), "y": float(dikd[2])}
+        konan = _rastgele_yerlestir(f, yuz, n, tek)
+        if not konan:
+            raise ValueError("%s yüze bu boyutta delik sığmadı; daha küçük ölçü ya da daha az delik dene." % BOLGE_ADLARI[bolge])
+        f["portlar"] += konan
+        yap.append("%s yüze rastgele %d %s açıldı%s" % (BOLGE_ADLARI[bolge], len(konan), _aciklik_ad(tek),
+                   "" if len(konan) == n else " (%d istendi, bu kadarı üst üste binmeden sığdı)" % n))
+        return f, yap
     # mevcut acikliklari buyut/kucult: "delikleri buyut", "ethernet deligini 3 mm buyut", "%50 buyut".
     # Tur adi gecerse (ethernet, usb-c...) yalniz o turdekiler, gecmezse yuzdeki hepsi; yeni aciklik eklenmez
     boyutla = bool(re.search(r"büyüt|buyut|küçült|kucult|genişlet|genislet|daralt|büyük yap|buyuk yap|küçük yap|kucuk yap", t)) \
@@ -622,7 +767,7 @@ def bolge_duzenle(form, komut, bolge=None):
                 g, y = g * k, y * k
             p["g"], p["y"] = round(max(2, g), 1), round(max(2, y), 1)
         for p in f["portlar"]:
-            if p["yuz"] in yuz_kume:
+            if p["yuz"] in yuz_kume and not p.get("sabit"):
                 p["u"] = None  # buyuyen acikliklar yeniden dizilsin, ust uste binmesin
         yap.append("%s yüzde %d açıklık %s (%s)" % (BOLGE_ADLARI[bolge], len(hedef), "büyütüldü" if buyut else "küçültüldü",
                    ", ".join(("Ø%g" % p["g"]) if p.get("sekil") == "daire" else "%gx%g" % (p["g"], p["y"]) for p in hedef)))
@@ -657,13 +802,30 @@ def bolge_duzenle(form, komut, bolge=None):
                 v = round(fv * 0.68, 1)
             elif re.search(r"alt\s*(kısm|taraf)|aşağı|asagi|altta", t):
                 v = round(fv * 0.35, 1)
-        for p in f["portlar"]:
-            if p["yuz"] in yuz_kume:
-                p["u"] = None  # ayni yuzdekiler yenilerle birlikte yeniden dizilsin (ust uste binmesin)
-        for q in yeni:
-            f["portlar"].append(dict(q, yuz=yuz, u=None, v=v))
-        yap.append("%s yüze %d açıklık eklendi (%s)" % (BOLGE_ADLARI[bolge], len(yeni), ", ".join(
-            ("Ø%g" % q["g"]) if q["sekil"] == "daire" else "%gx%g" % (q["g"], q["y"]) for q in yeni)))
+        konum = _konum_oku(t)
+        fu, fv = _yuz_boyu(f, yuz)
+        for q in yeni:  # yuze sigmayan aciklik: acikca soyle (eskiden sessizce tasiyordu)
+            if q["g"] > fu - 2 or q["y"] > fv - 2:
+                raise ValueError("%gx%g mm açıklık %s yüze sığmıyor (yüz %.0fx%.0f mm)." % (q["g"], q["y"], BOLGE_ADLARI[bolge], fu, fv))
+        if konum:
+            # "soldan 20 mm", "20 mm'den sonra", "alttan 10 mm": kenardan deligin kenarina; birden coksa yan yana 4 mm araliklı
+            x = konum.get("sol")
+            for q in yeni:
+                u = (x + q["g"] / 2) if x is not None else (fu - konum["sag"] - q["g"] / 2) if "sag" in konum else fu / 2
+                vv = (konum["alt"] + q["y"] / 2) if "alt" in konum else (fv - konum["ust"] - q["y"] / 2) if "ust" in konum else (v or fv / 2)
+                f["portlar"].append(dict(q, yuz=yuz, u=round(u, 1), v=round(vv, 1), sabit=True))
+                if x is not None:
+                    x += q["g"] + 4
+            yap.append("%s yüze %d açıklık eklendi: %s" % (BOLGE_ADLARI[bolge], len(yeni), "; ".join(
+                _aciklik_yazi(q) for q in f["portlar"][-len(yeni):])))
+        else:
+            for p in f["portlar"]:
+                if p["yuz"] in yuz_kume and not p.get("sabit"):
+                    p["u"] = None  # ayni yuzdekiler yenilerle birlikte yeniden dizilsin (ust uste binmesin)
+            for q in yeni:
+                f["portlar"].append(dict(q, yuz=yuz, u=None, v=v))
+            yap.append("%s yüze %d açıklık eklendi (%s)" % (BOLGE_ADLARI[bolge], len(yeni), ", ".join(
+                _aciklik_ad(q) for q in yeni)))
 
     if not yap:
         raise ValueError("'%s' için komut anlaşılmadı. Örnekler: 'petek ekle', 'petekleri kaldır', '2 usb-c aç', "
@@ -691,10 +853,12 @@ def kasa_parametreleri(v):
             if q.get("yuz") not in YUZLER + ("kapak",):
                 raise ValueError("açıklık yüzü anlaşılmadı: %r" % q.get("yuz"))
             bos = lambda x: x in (None, "")
-            portlar.append({"yuz": q["yuz"], "sekil": "daire" if q.get("sekil") == "daire" else "dikdortgen",
+            portlar.append({"yuz": q["yuz"], "sekil": q.get("sekil") if q.get("sekil") in SIMETRIK else "dikdortgen",
                             "u": None if bos(q.get("u")) else float(q["u"]),
                             "v": None if bos(q.get("v")) else float(q["v"]),
-                            "g": float(q["g"]), "y": float(q.get("y") or q["g"])})
+                            "g": float(q["g"]), "y": float(q.get("y") or q["g"]),
+                            # sabit: kullanici yerini belirledi (konumla, rastgele ya da surukleyerek); yeniden dizilmez
+                            "sabit": bool(q.get("sabit"))})
     for satir in (v.get("portlar") if isinstance(v.get("portlar"), str) else "").splitlines():
         p = satir.replace(",", ".").split()
         if len(p) == 5 and p[0] in YUZLER:
