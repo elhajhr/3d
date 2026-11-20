@@ -104,12 +104,35 @@ const uc = (x, y, z) => new THREE.Vector3(x, z, -y);
 const yon = (x, y, z) => new THREE.Vector3(x, z, -y);
 const geri = v => [v.x, -v.z, v.y];
 
-function goster(stl, kameraKoru) {
+// filament planina gore boya (renkli logo): her nokta kendi yuksekligindeki filamentin renginde; renk degisimi
+// baskidaki gibi tam yatay bant olur
+const EN_FAZLA = 8;
+function bantMalzemesi(plan) {
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.0 });
+  const sinir = plan.map(p => p.son), renk = plan.map(p => new THREE.Color(p.renkler[0]));
+  while (sinir.length < EN_FAZLA) { sinir.push(1e9); renk.push(renk[renk.length - 1]); }
+  m.onBeforeCompile = s => {
+    s.uniforms.uSinir = { value: sinir.slice(0, EN_FAZLA) };
+    s.uniforms.uRenk = { value: renk.slice(0, EN_FAZLA) };
+    s.vertexShader = s.vertexShader.replace("#include <common>", "#include <common>\nvarying float vYuk;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvYuk = position.y;");
+    s.fragmentShader = s.fragmentShader
+      .replace("#include <common>", `#include <common>\nvarying float vYuk;\nuniform float uSinir[${EN_FAZLA}];\nuniform vec3 uRenk[${EN_FAZLA}];`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+        vec3 bant = uRenk[${EN_FAZLA - 1}];
+        for (int i = 0; i < ${EN_FAZLA}; i++) { if (vYuk <= uSinir[i] + 0.02) { bant = uRenk[i]; break; } }
+        diffuseColor.rgb = bant;`);
+  };
+  return m;
+}
+
+function goster(stl, kameraKoru, plan = null) {
   if (parca) { sahne.remove(parca); parca.geometry.dispose(); }
   const g = new STLLoader().parse(stl);
   g.rotateX(-Math.PI / 2);
   g.computeBoundingBox();
-  parca = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x4f86f7, roughness: 0.55, metalness: 0.05 }));
+  parca = new THREE.Mesh(g, plan ? bantMalzemesi(plan)
+    : new THREE.MeshStandardMaterial({ color: 0x4f86f7, roughness: 0.55, metalness: 0.05 }));
   sahne.add(parca);
   izgara.position.y = g.boundingBox.min.y - 0.02;
   const b = new THREE.Vector3(); g.boundingBox.getSize(b);
@@ -211,6 +234,8 @@ async function cizdir(kameraKoru) {
     const r = await derle(model.kod);
     if (no !== sonCizim) return;  // bu arada daha yeni bir duzenleme geldi
     model.stl = r.stl;
+    // tarayicida yeniden derlendi: sunucudaki kopya ve renk plani (yukseklikler degismis olabilir) artik gecersiz
+    model.sunucudaGuncel = false; model.plan = null; model.tuketim = null;
     goster(r.stl, kameraKoru);
     yerel.modelDegisti?.();
     if (r.bos) durum("Model boş çıktı. Ölçüleri kontrol et.", "uyari");
@@ -690,7 +715,9 @@ function gecmisOku() { try { return JSON.parse(localStorage.getItem(ANAHTAR) || 
 function gecmisKaydet() {
   if (!model) return;
   const liste = gecmisOku().filter(m => m.id !== model.id);
-  liste.unshift({ id: model.id, tarif: model.tarif, tur: model.tur, form: model.form, kod: model.tur === "kasa" ? null : model.kod,
+  // logo kodlari cok buyuk (cokgenler): 150 KB'tan buyukse yalniz sunucudaki klasor adi saklanir, acilinca oradan gelir
+  const kod = model.tur === "kasa" ? null : (model.kod.length > 150000 && model.sunucuAd ? null : model.kod);
+  liste.unshift({ id: model.id, tarif: model.tarif, tur: model.tur, form: model.form, kod, sunucuAd: model.sunucuAd || null,
                   ozet: model.ozet, zaman: Date.now() });
   try { localStorage.setItem(ANAHTAR, JSON.stringify(liste.slice(0, 25))); } catch (e) { /* kota / gizli pencere */ }
   gecmisGoster();
@@ -708,6 +735,18 @@ function gecmisGoster() {
       model = { ...m };
       try {
         if (m.tur === "kasa") { const r = cagir("kasa_uret", JSON.stringify(m.form)); model.form = r.form; model.kod = r.kod; }
+        else if (m.sunucuAd && yerel.modelDegisti) {
+          // yazicinin bilgisayarinda: sunucudaki STL ve renk plani (logo renkleri ve M600 korunur)
+          const al = async (f, tur) => { const y = await fetch(`dosya/${m.sunucuAd}/${f}`); return y.ok ? (tur === "b" ? y.arrayBuffer() : tur === "j" ? y.json() : y.text()) : null; };
+          const stl = await al("model.stl", "b"), kod = m.kod || await al("model.scad");
+          if (stl && kod) {
+            yerel.sunucuSonucu(m.tarif, kod, stl, m.sunucuAd, m.ozet, await al("filament.json", "j"), await al("tuketim.json", "j"), m.id);
+            $("tarif").value = m.tarif;
+            durum("Geçmişten açıldı: " + m.tarif, "iyi");
+            return;
+          }
+        }
+        if (!model.kod) throw new Error("Bu modelin kodu yalnızca yazıcının bilgisayarında var.");
         secilenDelik = -1; $("tarif").value = m.tarif;
         arayuzuAc();
         await cizdir(false);
@@ -722,15 +761,20 @@ function gecmisGoster() {
 // uygulama.py'den aciliyorsa: dil modeli, dilimleme, OctoPrint, kamera. GitHub Pages'te bu istek 404 doner.
 const yerel = {
   model: () => model, durum, yukleniyor,
-  dilModeliSonucu(tarif, kod, stl, sunucuAd, olcuTutmadi) {
-    model = { id: Date.now().toString(36), tarif, tur: "nesne", form: null, kod, ozet: "dil modeli", sunucuAd, stl };
+  // sunucuda uretilen model (dil modeli ya da gorselden): STL, kod ve varsa renk plani sunucudan gelir
+  sunucuSonucu(tarif, kod, stl, sunucuAd, ozet, plan = null, tuketim = null, id = null) {
+    model = { id: id || Date.now().toString(36), tarif, tur: "nesne", form: null, kod, ozet, sunucuAd, sunucudaGuncel: true,
+              stl, plan, tuketim };
     secilenDelik = -1;
     arayuzuAc();
-    goster(stl, false);
+    goster(stl, false, plan);
     yerel.modelDegisti?.();
+    gecmisKaydet();
+  },
+  dilModeliSonucu(tarif, kod, stl, sunucuAd, olcuTutmadi) {
+    yerel.sunucuSonucu(tarif, kod, stl, sunucuAd, "dil modeli");
     durum(olcuTutmadi ? "Dil modeli modeli oluşturdu ama istenen ölçü tutmadı; ölçüleri düzenleyebilirsin." :
           "Dil modeli oluşturdu. Ölçüleri ve komutla düzenleyebilirsin.", olcuTutmadi ? "uyari" : "iyi");
-    gecmisKaydet();
   },
 };
 async function yerelBak() {

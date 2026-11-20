@@ -129,6 +129,18 @@
   dialog pre { margin: 0; padding: 16px; max-height: 70vh; overflow: auto; font-size: 13px; background: var(--zemin); }
   dialog .baslik { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--cizgi); }
   .rozet { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--vurgu-acik); color: var(--vurgu); }
+  .gorselSatir { display: flex; align-items: center; gap: 10px; }
+  .dugmeEtiket { font-weight: 600; border: 1px solid var(--cizgi); border-radius: 10px; padding: 9px 14px; cursor: pointer; white-space: nowrap; }
+  .dugmeEtiket:hover { border-color: var(--vurgu); }
+  #gorselOnizle { width: 48px; height: 48px; object-fit: contain; border-radius: 8px; border: 1px solid var(--cizgi); background: #fff; }
+  .renkSatir { display: grid; grid-template-columns: 26px 54px minmax(0, 1fr) 78px; gap: 8px; align-items: center; margin-top: 6px; font-size: 14px; }
+  .renkSatir .kutu, .filSatir .kutu { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--cizgi); }
+  .renkSatir select, .renkSatir input { padding: 7px 8px; }
+  select.filament { border-left-width: 14px; }
+  .filSatir { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 84px 70px; gap: 8px; align-items: center; margin-top: 6px; font-size: 14px; }
+  .filSatir input { padding: 6px 8px; }
+  .sira { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 14px; }
+  .sira .kutu { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--cizgi); flex: none; }
   footer { color: var(--soluk); font-size: 13px; text-align: center; padding: 8px 16px 24px; }
 </style>
 </head>
@@ -138,7 +150,7 @@
   <span class="alt">Tarif yaz → düzenle → STL indir. Tarayıcında çalışır, kurulum yok.</span>
   <span class="bosluk"></span>
   <span id="yerelRozet" class="rozet" hidden title="Yazıcının yanındaki bilgisayar: dil modeli, dilimleme, OctoPrint ve kamera açık">Yazıcı bilgisayarı</span>
-  <a id="eskiArayuz" href="/eski" hidden style="font-size:13px;color:var(--soluk)" title="Görselden/logodan model ve renkli baskı şimdilik eski arayüzde">Görselden model (eski arayüz)</a>
+  <a id="eskiArayuz" href="/eski" hidden style="font-size:13px;color:var(--soluk)" title="Önceki arayüz (yedek)">Eski arayüz</a>
   <span id="pyDurum">Hazırlanıyor…</span>
 </header>
 <main>
@@ -149,6 +161,42 @@
       <button class="ana genis" id="olustur" disabled>Oluştur</button>
       <div class="ornekler" id="ornekler"></div>
     </section>
+
+    <!-- gorselden model: OpenCV sunucuda calistigi icin yalnizca yazicinin bilgisayarinda -->
+    <section class="kart" id="gorselKart" hidden>
+      <h2>Görselden model <span class="rozet">logo · çizim · fotoğraf</span></h2>
+      <div class="gorselSatir">
+        <label class="dugmeEtiket">Görsel seç<input id="gorsel" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" hidden></label>
+        <img id="gorselOnizle" alt="" hidden>
+        <span id="gorselAd" class="ipucu" style="margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Seçilmedi</span>
+        <button id="gorselSil" hidden title="Görseli kaldır">✕</button>
+      </div>
+      <div id="gorselAyar" hidden>
+        <label class="alan" style="margin-top:10px">Görsel türü<select id="gorselTuru">
+          <option value="logo">Logo / çizim → kabartmalı, renkli parça</option>
+          <option value="nesne">Nesne fotoğrafı → 3B model (deneysel)</option></select></label>
+        <div id="logoAyar">
+          <div class="izgara3" style="margin-top:10px">
+            <label class="alan" style="grid-column:span 3">Gövde<select id="govdeTur">
+              <option value="cerceve">Logoyu çerçeveleyen hazır gövde</option><option value="serbest">Serbest (dil modeli tasarlasın)</option></select></label>
+            <label class="alan">Kalınlık (mm)<input id="govdeKalinlik" type="number" min="1" step="0.2" value="3"></label>
+            <label class="alan">Kenar payı (mm)<input id="govdePay" type="number" min="0" step="0.5" value="2"></label>
+            <label class="alan">Renk sayısı<select id="renkSayisi"><option>2</option><option>3</option><option>4</option>
+              <option>5</option><option>6</option><option selected>7</option></select></label>
+          </div>
+          <p class="ipucu" id="boyutUyari" hidden></p>
+          <div style="margin-top:10px;font-size:14px;color:var(--soluk)">Renk → filament ve kabartma yüksekliği (mm, 0 = kabarmaz)</div>
+          <div id="renkListe"></div>
+        </div>
+        <label class="alan" style="margin-top:10px">Anahtarlık kulpu<select id="kulp">
+          <option value="">Yok</option><option value="ust">Üst</option><option value="sol_ust">Sol üst</option><option value="sag_ust">Sağ üst</option>
+          <option value="sol">Sol</option><option value="sag">Sağ</option><option value="alt">Alt</option></select></label>
+        <p class="ipucu">Ölçüyü yukarıdaki tarife yaz (örn. <i>60 mm genişliğinde anahtarlık</i>); boş bırakırsan hazır bir tarif kullanılır.</p>
+        <button class="ana genis" id="gorselUret">Görselden oluştur</button>
+      </div>
+    </section>
+
+    <section class="kart" id="filamentKart" hidden></section>
 
     <section class="kart" id="ayarKart" hidden>
       <h2><span class="adim">2</span> Ayarlar <span class="rozet" id="ayarTur"></span></h2>
