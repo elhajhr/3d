@@ -426,6 +426,15 @@ def hazir_nesne(tarif, f=1.0):
         h = _boy(t) or (boyut[1] if len(boyut) > 1 and not _cap(t) else d)
         return (_kod([("cap", d, "mm, taban"), ("yukseklik", h, "mm")], "cylinder(d1 = cap, d2 = 0, h = yukseklik, $fn = 96);"),
                 "koni: taban çapı %g, yükseklik %g mm" % (d, h))
+    if sade and re.search(r"prizma", t):
+        # "tabani 4 cm ucgen prizma 2 cm yuksek": taban kenari a, yukseklik h. Dil modeli 3 denemede derleyemedi
+        kenar_sayisi = 6 if re.search(r"altıgen|altigen", t) else 4 if re.search(r"kare|dörtgen|dortgen", t) else 3
+        a = ilk(40)
+        h = _boy(t) or (boyut[1] if len(boyut) > 1 else round(a * 0.5, 1))
+        return (_kod([("taban_kenari", a, "mm"), ("yukseklik", h, "mm"), ("kenar_sayisi", kenar_sayisi, "3 üçgen, 4 kare, 6 altıgen")],
+                     "linear_extrude(height = yukseklik) circle(r = taban_kenari / (2 * sin(180 / round(kenar_sayisi))), "
+                     "$fn = round(kenar_sayisi));"),
+                "%s prizma: taban kenarı %g, yükseklik %g mm" % ({3: "üçgen", 4: "kare", 6: "altıgen"}[kenar_sayisi], a, h))
     if sade and re.search(r"piramit|piramid", t):
         a = ilk(50)
         h = _boy(t) or round(a * 0.8, 1)

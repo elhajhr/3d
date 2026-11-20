@@ -212,6 +212,7 @@ async function cizdir(kameraKoru) {
     if (no !== sonCizim) return;  // bu arada daha yeni bir duzenleme geldi
     model.stl = r.stl;
     goster(r.stl, kameraKoru);
+    yerel.modelDegisti?.();
     if (r.bos) durum("Model boş çıktı. Ölçüleri kontrol et.", "uyari");
     return Math.round(performance.now() - t0);
   } catch (e) {
@@ -226,7 +227,11 @@ async function olustur(tarif) {
   tarif = (tarif ?? $("tarif").value).trim();
   if (!api) return;
   let r;
-  try { r = cagir("tarif_coz", tarif); } catch (e) { durum(e.message, "uyari"); return; }
+  try { r = cagir("tarif_coz", tarif); } catch (e) {
+    // yazicinin bilgisayarinda: hazir sablonlarda olmayan tarifi dil modeline sor
+    if (yerel.dilModeli && /tanınmadı/.test(e.message)) { yerel.dilModeli(tarif); return; }
+    durum(e.message, "uyari"); return;
+  }
   model = { id: Date.now().toString(36), tarif, tur: r.tur, form: r.form || null, kod: r.kod, ozet: r.ozet };
   secilenDelik = -1;
   arayuzuAc();
@@ -713,9 +718,33 @@ function gecmisGoster() {
   }));
 }
 
+// ---------------------------------------------------------------- yazicinin bilgisayari (yerel sunucu)
+// uygulama.py'den aciliyorsa: dil modeli, dilimleme, OctoPrint, kamera. GitHub Pages'te bu istek 404 doner.
+const yerel = {
+  model: () => model, durum, yukleniyor,
+  dilModeliSonucu(tarif, kod, stl, sunucuAd, olcuTutmadi) {
+    model = { id: Date.now().toString(36), tarif, tur: "nesne", form: null, kod, ozet: "dil modeli", sunucuAd, stl };
+    secilenDelik = -1;
+    arayuzuAc();
+    goster(stl, false);
+    yerel.modelDegisti?.();
+    durum(olcuTutmadi ? "Dil modeli modeli oluşturdu ama istenen ölçü tutmadı; ölçüleri düzenleyebilirsin." :
+          "Dil modeli oluşturdu. Ölçüleri ve komutla düzenleyebilirsin.", olcuTutmadi ? "uyari" : "iyi");
+    gecmisKaydet();
+  },
+};
+async function yerelBak() {
+  try {
+    const y = await fetch("yerel/bilgi", { cache: "no-store" });
+    if (!y.ok || !(await y.json()).yerel) return;
+    (await import("./yerel.js")).baslat(yerel);
+  } catch (e) { /* GitHub Pages: yerel sunucu yok */ }
+}
+
 gecmisGoster();
 boyutla();
 pythonHazirla();
+yerelBak();
 // test ve hata ayiklama icin (konsoldan): tutamaklarin ekran konumu vb.
 window.__yz = {
   ekranda: obj => { const s = obj.position.clone().project(kamera), r = renderer.domElement.getBoundingClientRect();

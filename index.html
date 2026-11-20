@@ -137,6 +137,8 @@
   <h1>Metinden 3B Model</h1>
   <span class="alt">Tarif yaz → düzenle → STL indir. Tarayıcında çalışır, kurulum yok.</span>
   <span class="bosluk"></span>
+  <span id="yerelRozet" class="rozet" hidden title="Yazıcının yanındaki bilgisayar: dil modeli, dilimleme, OctoPrint ve kamera açık">Yazıcı bilgisayarı</span>
+  <a id="eskiArayuz" href="/eski" hidden style="font-size:13px;color:var(--soluk)" title="Görselden/logodan model ve renkli baskı şimdilik eski arayüzde">Görselden model (eski arayüz)</a>
   <span id="pyDurum">Hazırlanıyor…</span>
 </header>
 <main>
@@ -151,6 +153,52 @@
     <section class="kart" id="ayarKart" hidden>
       <h2><span class="adim">2</span> Ayarlar <span class="rozet" id="ayarTur"></span></h2>
       <div id="ayarIcerik"></div>
+    </section>
+
+    <!-- yalnizca yazicinin yanindaki bilgisayarda (yerel sunucu) gorunur -->
+    <section class="kart" id="baskiKart" hidden>
+      <h2><span class="adim">3</span> Baskı <span class="rozet" id="octoDurum">OctoPrint…</span></h2>
+      <div class="izgara2">
+        <label class="alan">Dolgu (%)<input id="bDolgu" type="number" min="0" max="100" step="5" value="20"></label>
+        <label class="alan" style="align-self:end;padding-bottom:10px"><span class="secenekler" style="margin:0"><label><input type="checkbox" id="bDestek"> Destek kullan</label></span></label>
+      </div>
+      <button class="ana genis" id="bDilimle" disabled>Dilimle ve kontrol et</button>
+      <div id="bRapor" class="ipucu"></div>
+      <div class="izgara3" style="margin-top:10px">
+        <button id="bGcode" disabled>G-code indir</button>
+        <button id="bYukle" disabled title="G-code OctoPrint'e yüklenir, baskı başlamaz">Yazıcıya yükle</button>
+        <button id="bBaslat" disabled title="Onay sorulur">Baskıyı başlat</button>
+      </div>
+    </section>
+
+    <section class="kart" id="izlemeKart" hidden>
+      <h2>Kamera ve izleme <span class="rozet" id="izDurum">Kapalı</span></h2>
+      <div class="izgara3">
+        <label class="alan" title="Laptop kamerası genelde 0, USB kamera 1">Kamera<input id="izKamera" type="number" min="0" step="1" value="0"></label>
+        <label class="alan" title="Bu güvenin altındaki tespitler sayılmaz">Eşik<input id="izEsik" type="number" min="0.1" max="0.95" step="0.05" value="0.5"></label>
+        <label class="alan" title="Spaghetti art arda kaç kontrolde görülürse onaylansın (her kontrol ~2 sn)">Onay<input id="izOnay" type="number" min="1" max="10" step="1" value="3"></label>
+      </div>
+      <div class="secenekler"><label title="Onaylanan spaghetti'de OctoPrint baskıyı duraklatır"><input type="checkbox" id="izOtomatik" checked> Hata onaylanınca baskıyı otomatik duraklat</label></div>
+      <button class="ana genis" id="izBaslat">İzlemeyi başlat</button>
+      <div id="izKap" style="position:relative;margin-top:10px">
+        <img id="izKare" alt="Kamera görüntüsü" hidden style="width:100%;display:block;border-radius:10px;border:1px solid var(--cizgi)">
+        <canvas id="izCizim" hidden style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair"></canvas>
+      </div>
+      <div id="izTespit" class="ipucu"></div>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:14px;font-weight:600">Kendi veri setimiz (etiketleme)</summary>
+        <div class="komut" style="margin-top:8px">
+          <button id="vDondur" title="O anki kareyi sabitler">Kareyi dondur</button>
+          <select id="vSinif"><option value="hatasiz">Hatasız</option><option value="spaghetti">Spaghetti</option>
+            <option value="stringing">Stringing</option><option value="warping">Warping</option></select>
+          <button id="vKaydet" class="ana" disabled>Kaydet</button>
+          <button id="vVazgec" disabled>Vazgeç</button>
+        </div>
+        <p class="ipucu" id="vNot">Kareyi dondur, sınıfı seç; hatalı sınıfta görüntüde hatanın etrafına kutu çiz, sonra Kaydet. Yalnızca bastığında kayıt yapılır.</p>
+        <p class="ipucu" id="vSayi"></p>
+      </details>
+      <pre id="izGecmis" style="margin:8px 0 0;font:12px/1.45 ui-monospace,Consolas,monospace;color:var(--soluk);white-space:pre-wrap;max-height:120px;overflow:auto"></pre>
+      <p class="ipucu">YOLOv8n (spaghetti, stringing, warping); test başarısı henüz düşük (mAP50 0,22), bu yüzden duraklatma art arda onaya bağlı. Görüntü kaydedilmez.</p>
     </section>
 
     <section class="kart">
