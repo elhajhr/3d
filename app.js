@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id);
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const PY_DOSYALAR = ["metinden_model.py", "sablon.py", "sekiller.py", "web_api.py"];
 const ISARET = "// --- model kodu ---";
-const YUZ_AD = { on: "Ön", arka: "Arka", sol: "Sol", sag: "Sağ", ust: "Üst", kapak: "Kapak" };
+const YUZ_AD = { on: "Ön", arka: "Arka", sol: "Sol", sag: "Sağ", ust: "Üst", kapak: "Kapak", alt: "Alt" };
 const ORNEKLER = [
   ["Mac mini kasası", "mac mini için kasa, önden takılsın, yanları altıgen havalandırmalı, arkada 2 usb-c ve bir hdmi"],
   ["Raspberry Pi kasası", "rpi için üstü petekli menteşeli kutu, arkada 4 usb ve bir ethernet"],
@@ -164,9 +164,8 @@ function sigdir() {
   kontrol.update();
   renderer.render(sahne, kamera);
   try { etiketleriCiz(); } catch (e) { /* model degisirken */ }
-  for (const c of duzenGrup.children) {
-    if (c.userData.ekranBoy) c.scale.setScalar(kamera.position.distanceTo(c.position) * 0.014 * c.userData.ekranBoy);
-  }
+  tutamakBoyla();
+  izgara.visible = kamera.position.y > izgara.position.y;  // alttan bakarken tabla izgarasi modeli ortmesin
 })();
 
 // ---------------------------------------------------------------- kasa olculeri
@@ -186,13 +185,48 @@ function yuzTaban(yuz, o) {
     sol:  { O: [0, o.D, 0], U: [0, -1, 0], V: [0, 0, 1], N: [-1, 0, 0], fu: o.D, fv: o.H },
     sag:  { O: [o.W, 0, 0], U: [0, 1, 0], V: [0, 0, 1], N: [1, 0, 0], fu: o.D, fv: o.H },
     ust:  { O: [0, 0, o.H], U: [1, 0, 0], V: [0, 1, 0], N: [0, 0, 1], fu: o.W, fv: o.D },
+    alt:  { O: [0, 0, 0], U: [1, 0, 0], V: [0, 1, 0], N: [0, 0, -1], fu: o.W, fv: o.D },  // taban (u = x, v = y)
   }[yuz];
 }
 const topla = (a, b, k = 1) => a.map((x, i) => x + b[i] * k);
 const nokta = (t, u, v, n = 0) => topla(topla(topla(t.O, t.U, u), t.V, v), t.N, n);
 
+// ---------------------------------------------------------------- serbest delikler (kasa disi her model)
+// Delik: yuzeydeki nokta p, dis normal n (sablon koordinati), olcu g x y, derinlik. Duvar kalinligi kadar delinir
+// (karsi duvar delinmez). Kod: modelin kendi kodu _govde modulune alinir, delikler ondan cikarilir; boylece
+// olcu/komut duzenlemeleri modelin kodunda calismaya devam eder.
+const norm = a => { const l = Math.hypot(...a) || 1; return a.map(x => x / l); };
+const capraz = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+function delikTabani(n) {
+  const u = Math.abs(n[2]) < 0.9 ? norm(capraz([0, 0, 1], n)) : [1, 0, 0];
+  return { u, v: norm(capraz(n, u)) };
+}
+function delikliKod(m) {
+  if (m.tur === "kasa" || !m.delikler || !m.delikler.length) return m.kod;
+  m.delikler = m.delikler.filter(d => +d.g > 0 && (d.sekil === "daire" || +d.y > 0) && d.p.every(isFinite));  // bozuk kayit derlemeyi kirmasin
+  const kes = m.delikler.map(d => {
+    const { u, v } = delikTabani(d.n), w = d.n.map(x => -x), o = topla(d.p, d.n, 1), h = d.derin + 2;
+    const y = -1;  // sag el: x = u, y = -v, z = -n
+    const mat = [[u[0], v[0] * y, w[0], o[0]], [u[1], v[1] * y, w[1], o[1]], [u[2], v[2] * y, w[2], o[2]], [0, 0, 0, 1]]
+      .map(r => "[" + r.map(x => +x.toFixed(5)).join(", ") + "]").join(", ");
+    const sekil = d.sekil === "daire" ? `cylinder(d = ${d.g}, h = ${h}, $fn = 48);`
+                                      : `translate([${-d.g / 2}, ${-d.y / 2}, 0]) cube([${d.g}, ${d.y}, ${h}]);`;
+    return `  multmatrix([${mat}]) ${sekil}`;
+  }).join("\n");
+  return `module _govde() {\n${m.kod}\n}\n// --- düzenle modunda eklenen delikler ---\ndifference() {\n  _govde();\n${kes}\n}\n`;
+}
+// yuzeydeki noktadan iceri dogru duvar kalinligi (karsi yuzeye ilk carpma)
+function duvarKalinligi(p3, n3) {
+  const eski = parca.material.side;
+  parca.material.side = THREE.DoubleSide;
+  const r = new THREE.Raycaster(p3.clone().addScaledVector(n3, -0.05), n3.clone().negate());
+  const v = r.intersectObject(parca)[0];
+  parca.material.side = eski;
+  return v ? Math.min(v.distance + 0.05, 200) : 5;
+}
+
 // ---------------------------------------------------------------- bolge etiketleri (kasa)
-const BOLGE = [["kapak", "1"], ["on", "2"], ["arka", "3"], ["sol", "4"], ["sag", "5"]];
+const BOLGE = [["kapak", "1"], ["on", "2"], ["arka", "3"], ["sol", "4"], ["sag", "5"], ["alt", "6"]];
 const etiketler = {};
 function etiketleriCiz() {
   const kutu = $("etiketler");
@@ -203,6 +237,7 @@ function etiketleriCiz() {
     kapak: kapakli ? [uc(o.W + 12 + o.W / 2, o.Dref - o.D / 2, o.zb + o.duvar + 2), [0, 1, 0]] : [uc(o.W / 2, o.D / 2, o.H + 1), [0, 1, 0]],
     on: [uc(o.W / 2, -1, o.H / 2), [0, 0, 1]], arka: [uc(o.W / 2, o.D + 1, o.H / 2), [0, 0, -1]],
     sol: [uc(-1, o.D / 2, o.H / 2), [-1, 0, 0]], sag: [uc(o.W + 1, o.D / 2, o.H / 2), [1, 0, 0]],
+    alt: [uc(o.W / 2, o.D / 2, o.zb - 1), [0, -1, 0]],  // tabanin altinda: alttan bakinca gorunur
   };
   const w = kap.clientWidth, h = kap.clientHeight;
   for (const [ad, no] of BOLGE) {
@@ -231,7 +266,8 @@ async function cizdir(kameraKoru) {
   yukleniyor(true);
   try {
     const t0 = performance.now();
-    const r = await derle(model.kod);
+    model.sonKod = delikliKod(model);   // serbest delikler (duzenle modu) modelin koduna ayrica eklenir
+    const r = await derle(model.sonKod);
     if (no !== sonCizim) return;  // bu arada daha yeni bir duzenleme geldi
     model.stl = r.stl;
     // tarayicida yeniden derlendi: sunucudaki kopya ve renk plani (yukseklikler degismis olabilir) artik gecersiz
@@ -269,12 +305,12 @@ async function olustur(tarif) {
 
 function arayuzuAc() {
   const kasa = model.tur === "kasa";
-  for (const id of ["duzenModu", "sigdir", "kodGoster", "stlIndir", "komut", "komutUygula"]) $(id).disabled = false;
+  for (const id of ["duzenModu", "sigdir", "alttan", "kodGoster", "stlIndir", "komut", "komutUygula"]) $(id).disabled = false;
   $("bolgeSec").hidden = !kasa;
   $("komut").placeholder = kasa
     ? "Komutla düzenle: petek ekle · 20 mm yuvarlak delik aç · 3. bölgeye ethernet ekle · menteşeli yap"
     : "Komutla düzenle: 5 delikli yap · kalınlık 6 mm · yazıyı MEHMET yap · biraz büyüt";
-  $("delikAraclari").hidden = !kasa;
+  $("delikAraclari").hidden = false;  // delik ekleme her modelde (kasada portlar, digerlerinde serbest delik)
   ayarlariGoster();
   if (duzenAcik) duzenKur();
 }
@@ -353,7 +389,7 @@ function ayarlariGoster() {
       </div>
       <div style="margin-top:10px;font-size:14px;color:var(--soluk)">Altıgen havalandırma</div>
       <div class="secenekler">
-        ${["sol", "sag", "on", "arka", "ust"].map(y => `<label><input type="checkbox" data-petek="${y}" ${petek.has(y) || (y === "ust" && petek.has("kapak")) ? "checked" : ""}> ${y === "ust" ? "Üst/kapak" : YUZ_AD[y]}</label>`).join("")}
+        ${["sol", "sag", "on", "arka", "ust", "alt"].map(y => `<label><input type="checkbox" data-petek="${y}" ${petek.has(y) || (y === "ust" && petek.has("kapak")) ? "checked" : ""}> ${y === "ust" ? "Üst/kapak" : y === "alt" ? "Alt (taban)" : YUZ_AD[y]}</label>`).join("")}
         <label><input type="checkbox" data-ad="ayak" ${f.ayak ? "checked" : ""}> Ayaklar</label>
       </div>
       <div class="ara"></div>
@@ -386,7 +422,16 @@ function ayarlariGoster() {
       `<div class="izgara2" style="margin-top:6px">${olculer.map(([, ad, deger, ac]) =>
         `<label class="alan" title="${ac || ""}">${etiketAdi(ad)}${ac && /^mm/.test(ac) ? " <small>(mm)</small>" : ""}<input type="number" step="any" data-ad="${ad}" value="${deger}"></label>`).join("")}</div>
       <button class="ana genis" id="ayarUygula">Ölçüleri uygula</button>
-      <p class="ipucu">Düzenle modunda çerçevenin turuncu tutamaklarını sürükleyerek de boyutlandırabilirsin.</p>`;
+      <p class="ipucu">Düzenle modunda çerçevenin turuncu tutamaklarını sürükleyerek de boyutlandırabilirsin.</p>
+      <div class="ara"></div>
+      <div style="font-size:14px;color:var(--soluk)">Eklenen delikler (${(model.delikler || []).length}) · düzenle modunda "+ Delik ekle" ile istediğin yere (altına da)</div>
+      ${(model.delikler || []).map((d, i) => `
+        <div class="port ${i === secilenDelik ? "secik" : ""}" data-i="${i}">
+          <span>${d.sekil === "daire" ? `Yuvarlak Ø${d.g}` : `${d.g}×${d.y}`} <span style="color:var(--soluk)">· ${d.derin.toFixed(1)} mm derin · ${yuzYonu(d.n)}</span></span>
+          <button data-sil="${i}">Sil</button>
+        </div>`).join("")}`;
+    k.querySelectorAll("[data-sil]").forEach(b => b.onclick = ev => { ev.stopPropagation(); delikSil(+b.dataset.sil); });
+    k.querySelectorAll(".port").forEach(d => d.onclick = () => delikSec(+d.dataset.i));
     $("ayarUygula").onclick = async () => {
       const d = {};
       k.querySelectorAll("input[data-ad]").forEach(i => { if (i.value !== "") d[i.dataset.ad] = +i.value; });
@@ -403,6 +448,13 @@ function ayarlariGoster() {
   }
 }
 
+// delik normalinden okunur yon: alt, ust, on, arka, sol, sag
+function yuzYonu(n) {
+  const [x, y, z] = n, m = Math.max(Math.abs(x), Math.abs(y), Math.abs(z));
+  if (m === Math.abs(z)) return z < 0 ? "alt yüz" : "üst yüz";
+  if (m === Math.abs(y)) return y < 0 ? "ön" : "arka";
+  return x < 0 ? "sol" : "sağ";
+}
 function delikSec(i) {
   secilenDelik = i;
   $("delikSil").disabled = i < 0;
@@ -410,7 +462,13 @@ function delikSec(i) {
   if (duzenAcik) duzenKur();
 }
 function delikSil(i) {
-  if (!model || model.tur !== "kasa" || i < 0) return;
+  if (!model || i < 0) return;
+  if (model.tur !== "kasa") {
+    model.delikler.splice(i, 1);
+    secilenDelik = -1; $("delikSil").disabled = true;
+    delikleriYenile("Delik silindi.");
+    return;
+  }
   const yeni = structuredClone(model.form);
   const p = yeni.portlar.splice(i, 1)[0];
   secilenDelik = -1; $("delikSil").disabled = true;
@@ -441,6 +499,11 @@ function cerceve(min, max) {
   duzenGrup.add(kutu);
   return kutu;
 }
+function tutamakBoyla() {
+  for (const c of duzenGrup.children) {
+    if (c.userData.ekranBoy) c.scale.setScalar(kamera.position.distanceTo(c.position) * 0.014 * c.userData.ekranBoy);
+  }
+}
 function temizle() {
   for (const c of [...duzenGrup.children]) { duzenGrup.remove(c); c.geometry?.dispose(); c.material?.dispose(); }
 }
@@ -466,7 +529,9 @@ function duzenKur() {
     tutamak(new THREE.Vector3(bb.max.x, m.y, m.z), { tip: "olcek", eksen: 0, ad: "Genişlik" }, r);
     tutamak(new THREE.Vector3(m.x, m.y, bb.min.z), { tip: "olcek", eksen: 1, ad: "Derinlik" }, r);
     tutamak(new THREE.Vector3(m.x, bb.max.y, m.z), { tip: "olcek", eksen: 2, ad: "Yükseklik" }, r);
-    $("duzenNot").textContent = "Turuncu topları sürükle: genişlik, derinlik, yükseklik";
+    (model.delikler || []).forEach((d, i) => serbestCiz(d, i, r));
+    $("duzenNot").textContent = delikEkleModu ? "Deliğin açılacağı yere tıkla (altı için önce ⤓ Alttan)." :
+      "Turuncu top: boyut · mavi: delik (sürükle: yüzeyde taşı, köşeden büyüt)";
   }
 }
 
@@ -491,10 +556,41 @@ function delikCiz(p, i, o, r) {
   tutamak(uc(...nokta(t, +p.u + g / 2 + 2, +p.v + y / 2 + 2, 0.8)), { tip: "delikBoyut", i }, r, 0.75).material.color.set(renk);
 }
 
+function serbestCiz(d, i, r) {
+  const secik = i === secilenDelik, renk = secik ? 0xe8590c : 0x2f6fed;
+  const { u, v } = delikTabani(d.n);
+  const geo = d.sekil === "daire" ? new THREE.CircleGeometry(d.g / 2, 40) : new THREE.PlaneGeometry(d.g, d.y);
+  const yuzey = new THREE.Mesh(geo, malzeme(renk, secik ? 0.55 : 0.35));
+  const kenar = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: renk, depthTest: false }));
+  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(yon(...u), yon(...v), yon(...d.n)));
+  for (const m of [yuzey, kenar]) { m.quaternion.copy(q); m.position.copy(uc(...topla(d.p, d.n, 0.3))); m.renderOrder = 18; duzenGrup.add(m); }
+  yuzey.userData = { tip: "serbestDelik", i, kenar };
+  const kose = topla(topla(d.p, u, d.g / 2 + 1.5), v, (d.sekil === "daire" ? 0 : d.y / 2 + 1.5));
+  tutamak(uc(...topla(kose, d.n, 0.3)), { tip: "serbestBoyut", i }, r, 0.75).material.color.set(renk);
+}
+function serbestDelikEkle() {
+  const v = ray.intersectObject(parca)[0];
+  if (!v) { durum("Modelin üzerine tıkla.", "uyari"); return; }
+  const n3 = v.face.normal.clone().normalize();
+  let [sekil, g, y] = ($("yeniDelik").value || "daire,10,10").split(",");
+  if (!(+g > 0)) [sekil, g, y] = ["daire", 10, 10];  // gecersiz secim: Ø10
+  model.delikler = model.delikler || [];
+  model.delikler.push({ p: geri(v.point), n: norm(geri(n3)), sekil, g: +g, y: +y, derin: duvarKalinligi(v.point, n3) });
+  secilenDelik = model.delikler.length - 1;
+  delikEkleModu = false; $("delikEkle").classList.remove("secik");
+  delikleriYenile("Delik eklendi. Sürükleyerek yüzeyde taşıyabilir, köşesinden büyütebilirsin.");
+}
+async function delikleriYenile(mesaj) {
+  ayarlariGoster();
+  try { await cizdir(true); durum(mesaj, "iyi"); gecmisKaydet(); } catch (e) { /* durum yazildi */ }
+}
+
 // --- surukleme
 const ray = new THREE.Raycaster();
 let surukle = null;
 function isinla(e) {
+  // cizim dongusu durmus olsa da (arka planda sekme) isin ve tutamaklar guncel kamerayla hesaplansin
+  kamera.updateMatrixWorld(); tutamakBoyla(); sahne.updateMatrixWorld();
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), kamera);
 }
@@ -511,8 +607,9 @@ function enYakin(e, vuruslar) {
     const s = v.object.position.clone().project(kamera);
     return Math.hypot(r.left + (s.x + 1) / 2 * r.width - e.clientX, r.top + (1 - s.y) / 2 * r.height - e.clientY);
   };
-  const toplar = vuruslar.filter(v => v.object.userData.tip !== "delik").sort((a, b) => px(a) - px(b));
-  const govde = vuruslar.find(v => v.object.userData.tip === "delik");
+  const govdeMi = v => v.object.userData.tip === "delik" || v.object.userData.tip === "serbestDelik";
+  const toplar = vuruslar.filter(v => !govdeMi(v)).sort((a, b) => px(a) - px(b));
+  const govde = vuruslar.find(govdeMi);
   // deligin icine tiklandiysa delik tasinir; top yalnizca tam ustune (7 px) tiklaninca secilir
   if (govde && (!toplar.length || px(toplar[0]) > 7)) return govde;
   return toplar[0] || govde;
@@ -528,7 +625,7 @@ function eksenDuzlemi(eksen, nokta) {
 renderer.domElement.addEventListener("pointerdown", e => {
   if (!duzenAcik || !parca || e.button !== 0) return;
   isinla(e);
-  if (delikEkleModu && model.tur === "kasa") { delikEkle(e); return; }
+  if (delikEkleModu) { model.tur === "kasa" ? delikEkle(e) : serbestDelikEkle(); return; }
   const vurus = enYakin(e, ray.intersectObjects(duzenGrup.children.filter(c => c.userData.tip), false));
   if (!vurus) return;
   kontrol.enabled = false;  // OrbitControls bu tiklamada donmesin (yakalama asamasinda, ondan once calisir)
@@ -537,6 +634,11 @@ renderer.domElement.addEventListener("pointerdown", e => {
   if (u.tip === "boyut" || u.tip === "olcek") {
     surukle.eksen = EKSEN3[u.eksen];
     surukle.duzlem = eksenDuzlemi(surukle.eksen, vurus.object.position);
+  } else if (u.tip === "serbestDelik" || u.tip === "serbestBoyut") {
+    const d = model.delikler[u.i];
+    surukle.d0 = { ...d };
+    // tasima yuzey boyunca (ray modele carpar); boyutlandirma deligin duzleminde
+    surukle.duzlem = new THREE.Plane().setFromNormalAndCoplanarPoint(yon(...d.n), uc(...d.p));
   } else {
     const o = kasaOlcu(), p = model.form.portlar[u.i], t = yuzTaban(p.yuz, o);
     surukle.t = t; surukle.p0 = { ...p };
@@ -550,13 +652,37 @@ renderer.domElement.addEventListener("pointermove", e => {
   isinla(e);
   if (!surukle) {
     const h = ray.intersectObjects(duzenGrup.children.filter(c => c.userData.tip), false)[0];
-    renderer.domElement.style.cursor = delikEkleModu ? "crosshair" : h ? (h.object.userData.tip === "delik" ? "move" : "grab") : "";
+    renderer.domElement.style.cursor = delikEkleModu ? "crosshair" : h ? (/[dD]elik$/.test(h.object.userData.tip) ? "move" : "grab") : "";
     return;
   }
   const p = new THREE.Vector3();
   if (!ray.ray.intersectPlane(surukle.duzlem, p)) return;
   if (Math.hypot(e.clientX - surukle.x0, e.clientY - surukle.y0) > 3) surukle.oynadi = true;
   const u = surukle.u;
+  if (u.tip === "serbestDelik") {
+    const v = ray.intersectObject(parca)[0];
+    if (!v) return;
+    const n3 = v.face.normal.clone().normalize();
+    surukle.yeni = { p: geri(v.point), n: norm(geri(n3)), derin: duvarKalinligi(v.point, n3) };
+    const { u: uu, v: vv } = delikTabani(surukle.yeni.n);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(yon(...uu), yon(...vv), yon(...surukle.yeni.n)));
+    const yer = uc(...topla(surukle.yeni.p, surukle.yeni.n, 0.3));
+    for (const m of [surukle.obj, u.kenar]) { m.position.copy(yer); m.quaternion.copy(q); }
+    balon(e, "Bırakınca delik buraya taşınır");
+    return;
+  }
+  if (u.tip === "serbestBoyut") {
+    const d0 = surukle.d0, { u: uu, v: vv } = delikTabani(d0.n), fark = geri(p).map((x, i) => x - d0.p[i]);
+    const du = Math.abs(fark.reduce((a, x, i) => a + x * uu[i], 0)), dv = Math.abs(fark.reduce((a, x, i) => a + x * vv[i], 0));
+    const g = Math.max(1, Math.round(2 * Math.max(du - 1.5, 0.5) * 2) / 2), y = Math.max(1, Math.round(2 * Math.max(dv - 1.5, 0.5) * 2) / 2);
+    surukle.yeni = d0.sekil === "daire" ? { g: Math.max(g, Math.round(2 * Math.hypot(du, dv) * 2) / 2 - 3), y: 0 } : { g, y };
+    if (d0.sekil === "daire") surukle.yeni.y = surukle.yeni.g;
+    surukle.obj.position.copy(p);
+    const govde = duzenGrup.children.find(c => c.userData.tip === "serbestDelik" && c.userData.i === u.i);
+    if (govde) { govde.scale.set(surukle.yeni.g / d0.g, surukle.yeni.y / d0.y, 1); govde.userData.kenar.scale.copy(govde.scale); }
+    balon(e, d0.sekil === "daire" ? `Ø ${surukle.yeni.g} mm` : `${surukle.yeni.g} × ${surukle.yeni.y} mm`);
+    return;
+  }
   if (u.tip === "boyut" || u.tip === "olcek") {
     const d = p.clone().sub(surukle.bas).dot(surukle.eksen);
     surukle.fark = d;
@@ -607,7 +733,13 @@ renderer.domElement.addEventListener("pointerup", e => {
   balon(e, "");
   const u = s.u;
   if (!s.oynadi) {  // tiklama: delik sec
-    if (u.tip === "delik" || u.tip === "delikBoyut") delikSec(u.i);
+    if (/elik|Boyut$/.test(u.tip) && u.i !== undefined) delikSec(u.i);
+    return;
+  }
+  if ((u.tip === "serbestDelik" || u.tip === "serbestBoyut") && s.yeni) {
+    Object.assign(model.delikler[u.i], s.yeni);
+    secilenDelik = u.i;
+    delikleriYenile(u.tip === "serbestDelik" ? "Delik taşındı." : "Delik boyutlandırıldı.");
     return;
   }
   if (u.tip === "boyut") {
@@ -657,6 +789,8 @@ function delikEkle(e) {
     const aday = [{ yuz: "on", d: Math.abs(Y), u: X, v: Z }, { yuz: "arka", d: Math.abs(o.D - Y), u: o.W - X, v: Z },
                   { yuz: "sol", d: Math.abs(X), u: o.D - Y, v: Z }, { yuz: "sag", d: Math.abs(o.W - X), u: Y, v: Z }];
     if (o.kapak === "yok") aday.push({ yuz: "ust", d: Math.abs(o.H - Z), u: X, v: Y });
+    // taban: yalniz asagi bakan yuzeye tiklaninca (yan yuzun alt kenari tabana sayilmasin; ayaklar sayilmaz)
+    if (Z > -0.5 && v.face && v.face.normal.y < -0.7) aday.push({ yuz: "alt", d: 0, u: X, v: Y });
     yer = aday.reduce((a, b) => (b.d < a.d ? b : a));
     if (yer.d > o.duvar + 1.5) { durum("Kasanın bir dış yüzüne tıkla.", "uyari"); return; }
     if (yer.yuz === model.form.acik) { durum(`${YUZ_AD[yer.yuz]} yüz açık; oraya delik açılamaz.`, "uyari"); return; }
@@ -690,8 +824,31 @@ window.addEventListener("keydown", e => {
 
 // ---------------------------------------------------------------- arac cubugu, gecmis, ornekler
 $("sigdir").onclick = sigdir;
-$("kodGoster").onclick = () => { $("kodMetin").textContent = model ? model.kod : ""; $("kodPencere").showModal(); };
+// alttan bak / uste don: kamerayi hedefin altina (ya da ustune) aynalar
+$("alttan").onclick = () => {
+  const t = kontrol.target, f = kamera.position.clone().sub(t);
+  f.y = -f.y || (kamera.position.y > t.y ? -1 : 1);
+  kamera.position.copy(t).add(f);
+  kontrol.update();
+  $("alttan").classList.toggle("secik", kamera.position.y < t.y);
+};
+// kodu elle duzenle: istenen her seyi yazabilirsin; uygula -> tarayicida derlenir
+$("kodGoster").onclick = () => {
+  $("kodMetin").value = model ? model.kod : "";
+  $("kodNot").textContent = model && model.tur === "kasa" ? "Kasa kodunu elle değiştirirsen kasa ayarları ve bölge komutları bu model için kapanır (kod serbest olur)." :
+    (model && (model.delikler || []).length ? "Düzenle modunda eklenen delikler bu kodun üstüne ayrıca uygulanır." : "");
+  $("kodPencere").showModal();
+};
 $("kodKapat").onclick = () => $("kodPencere").close();
+$("kodUygula").onclick = async () => {
+  const yeni = $("kodMetin").value;
+  if (!model || yeni === model.kod) { $("kodPencere").close(); return; }
+  if (model.tur === "kasa") { model.tur = "nesne"; model.form = null; model.delikler = []; arayuzuAc(); }
+  model.kod = yeni;
+  $("kodPencere").close();
+  ayarlariGoster();
+  try { await cizdir(true); durum("Kod uygulandı.", "iyi"); gecmisKaydet(); } catch (e) { $("kodPencere").showModal(); }
+};
 $("stlIndir").onclick = () => {
   if (!model || !model.stl) return;
   const ad = (model.tarif || "model").toLowerCase().replace(/[^a-z0-9çğıöşü]+/gi, "_").slice(0, 40) || "model";
@@ -718,7 +875,7 @@ function gecmisKaydet() {
   // logo kodlari cok buyuk (cokgenler): 150 KB'tan buyukse yalniz sunucudaki klasor adi saklanir, acilinca oradan gelir
   const kod = model.tur === "kasa" ? null : (model.kod.length > 150000 && model.sunucuAd ? null : model.kod);
   liste.unshift({ id: model.id, tarif: model.tarif, tur: model.tur, form: model.form, kod, sunucuAd: model.sunucuAd || null,
-                  ozet: model.ozet, zaman: Date.now() });
+                  delikler: model.delikler || [], ozet: model.ozet, zaman: Date.now() });
   try { localStorage.setItem(ANAHTAR, JSON.stringify(liste.slice(0, 25))); } catch (e) { /* kota / gizli pencere */ }
   gecmisGoster();
 }
@@ -791,8 +948,10 @@ pythonHazirla();
 yerelBak();
 // test ve hata ayiklama icin (konsoldan): tutamaklarin ekran konumu vb.
 window.__yz = {
-  ekranda: obj => { const s = obj.position.clone().project(kamera), r = renderer.domElement.getBoundingClientRect();
+  ekranda: obj => { kamera.updateMatrixWorld(); const s = obj.position.clone().project(kamera), r = renderer.domElement.getBoundingClientRect();
                     return [r.left + (s.x + 1) / 2 * r.width, r.top + (1 - s.y) / 2 * r.height]; },
   tutamaklar: () => duzenGrup.children.filter(c => c.userData.tip),
+  vur: (x, y) => { isinla({ clientX: x, clientY: y }); return ray.intersectObjects(duzenGrup.children.filter(c => c.userData.tip), false).map(v => v.object.userData.tip); },
+  surukle: () => surukle && { tip: surukle.u.tip, oynadi: surukle.oynadi, yeni: surukle.yeni },
   model: () => model,
 };

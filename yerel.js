@@ -96,7 +96,7 @@ function baskiKur(ctx) {
       // sunucuda uretilip degistirilmemis model (dil modeli, gorsel) o klasorden dilimlenir: renkli logonun filament
       // plani (M600) orada. Tarayicida uretilen/degistirilen model once sunucuya kaydedilir
       if (!(m.sunucuAd && m.sunucudaGuncel)) {
-        const k = await postJson("kaydet", { ad: m.sunucuAd || "", tarif: m.tarif, kod: m.kod, stl: stlBase64(m.stl) });
+        const k = await postJson("kaydet", { ad: m.sunucuAd || "", tarif: m.tarif, kod: m.sonKod || m.kod, stl: stlBase64(m.stl) });
         if (k.hata) throw new Error(k.hata);
         m.sunucuAd = k.ad; m.sunucudaGuncel = true;
       }

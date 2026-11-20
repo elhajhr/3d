@@ -25,6 +25,7 @@
     --sahne: #12161c; --golge: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* sinif stilleri (rozet vb.) hidden ozniteligini ezmesin */
   html, body { margin: 0; }
   body { background: var(--zemin); color: var(--metin); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased; }
@@ -265,6 +266,7 @@
         <div class="arac">
           <button id="duzenModu" title="Çerçeveyi ve delikleri sürükleyerek düzenle" disabled>✎<span class="yazi"> Düzenle</span></button>
           <button id="sigdir" title="Görünümü modele sığdır" disabled>⤢<span class="yazi"> Sığdır</span></button>
+          <button id="alttan" title="Modele alttan bak / üste dön (alt yüzü düzenlemek için)" disabled>⤓<span class="yazi"> Alttan</span></button>
           <button id="kodGoster" title="OpenSCAD kodunu göster" disabled>&lt;/&gt;<span class="yazi"> Kod</span></button>
           <button id="stlIndir" class="ana" title="Baskı için STL dosyasını indir" disabled>⬇<span class="yazi"> STL</span></button>
         </div>
@@ -288,7 +290,7 @@
           <select id="bolgeSec" hidden title="Düzenlenecek bölge">
             <option value="">Bölge: komuttan anla</option>
             <option value="kapak">1 · Kapak / üst</option><option value="on">2 · Ön</option><option value="arka">3 · Arka</option>
-            <option value="sol">4 · Sol</option><option value="sag">5 · Sağ</option><option value="genel">Tüm kasa</option>
+            <option value="sol">4 · Sol</option><option value="sag">5 · Sağ</option><option value="alt">6 · Alt (taban)</option><option value="genel">Tüm kasa</option>
           </select>
           <input id="komut" type="text" placeholder="Komutla düzenle: örn. petek ekle · 20 mm yuvarlak delik aç · 5 delikli yap" disabled>
           <button id="komutUygula" disabled>Uygula</button>
@@ -301,8 +303,10 @@
 <footer>Kasa ve hazır nesneler tarayıcıda kurallarla üretilir; OpenSCAD (WebAssembly) ile derlenir. Serbest tarifler, dilimleme ve yazıcı kontrolü yazıcının yanındaki bilgisayardaki uygulamadadır.</footer>
 
 <dialog id="kodPencere">
-  <div class="baslik"><strong>OpenSCAD kodu</strong><button id="kodKapat">Kapat</button></div>
-  <pre id="kodMetin"></pre>
+  <div class="baslik"><strong>OpenSCAD kodu (düzenlenebilir)</strong>
+    <span style="display:flex;gap:8px"><button id="kodKapat">Kapat</button><button id="kodUygula" class="ana">Uygula</button></span></div>
+  <p class="ipucu" id="kodNot" style="margin:8px 16px 0"></p>
+  <textarea id="kodMetin" spellcheck="false" style="display:block;width:calc(100% - 32px);margin:10px 16px 16px;height:60vh;font:13px/1.45 ui-monospace,Consolas,monospace;white-space:pre;border-radius:10px"></textarea>
 </dialog>
 
 <script type="importmap">

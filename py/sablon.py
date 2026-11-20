@@ -3,7 +3,7 @@
 # Eksenler: X genislik (sol -> sag), Y derinlik (on -> arka), Z yukseklik. Dis kose (0, 0, 0).
 import json, math, re
 
-YUZLER = ("on", "arka", "sol", "sag", "ust")  # portlarda "kapak" da kullanilabilir (kapakli kutuda kapak plakasi)
+YUZLER = ("on", "arka", "sol", "sag", "ust", "alt")  # alt: taban (havalandirma, vida, kablo delikleri)  # portlarda "kapak" da kullanilabilir (kapakli kutuda kapak plakasi)
 
 
 # --- basit tariften sablon ayarlari: model kod yazmaz, yalnizca bu formu doldurur (kucuk modelde cok daha isabetli)
@@ -231,6 +231,7 @@ def _yuz(yuz, W, D, H, duvar_=2.5):
         "sol":  ("translate([-1, %g, 0]) rotate([90, 0, -90]) mirror([0, 0, 1])" % D, D, H),
         "sag":  ("translate([%g, 0, 0]) rotate([90, 0, 90]) mirror([0, 0, 1])" % (W + 1), D, H),
         "ust":  ("translate([0, 0, %g])" % (H - duvar_ - 1), W, D),  # ust duvarin altindan baslayip gecsin
+        "alt":  ("translate([0, 0, -1])", W, D),  # taban; u = x, v = y (ustten bakar gibi)
     }[yuz]
 
 
@@ -296,7 +297,7 @@ def acikliklari_coz(cihaz, bosluk=0.6, duvar=2.5, kapak="yok", portlar=()):
     """Acikliklarin konumunu mm olarak cozer: konumu verilmeyen (None) yuzun ortasina, ayni yuzde birden cok olan
     ("sira": (k, adet)) esit aralikla yan yana. Daire icin y = g. Arayuzdeki elle duzenleme formu bu degerleri gosterir."""
     W, D, H = dis_olcu(cihaz, bosluk, duvar, kapak)
-    boy = lambda yuz: (W, D) if yuz in ("ust", "kapak") else _yuz(yuz, W, D, H, duvar)[1:]
+    boy = lambda yuz: (W, D) if yuz in ("ust", "kapak", "alt") else _yuz(yuz, W, D, H, duvar)[1:]
     cozulen = []
     for p in portlar:
         fu, fv = boy(p["yuz"])
@@ -363,8 +364,8 @@ def kasa_kodu(cihaz, bosluk=0.6, duvar=2.5, kose=4.0, acik="on", petek=("sol", "
     def delik_say(cap, ara):
         n = 0
         for yuz in petek:
-            fu, fv = (W, D) if yuz in ("ust", "kapak") else _yuz(yuz, W, D, H, duvar)[1:]
-            pv = pay if yuz in ("ust", "kapak") else _pay_v(fv, pay, cap, duvar)
+            fu, fv = (W, D) if yuz in ("ust", "kapak", "alt") else _yuz(yuz, W, D, H, duvar)[1:]
+            pv = pay if yuz in ("ust", "kapak", "alt") else _pay_v(fv, pay, cap, duvar)
             n += len(_petek(pay, pv, fu - pay, fv - pv, cap, ara))
         return n
     for _ in range(12):
@@ -383,9 +384,11 @@ def kasa_kodu(cihaz, bosluk=0.6, duvar=2.5, kose=4.0, acik="on", petek=("sol", "
         don, fu, fv = _yuz(yuz, W, D, H, duvar)
         # onu/arkasi acik kasa acik yuzu yukari basilir (dilimleyici bu yonu secer): o zaman sol/sag yuzlerin u ekseni
         # (derinlik) dikey olur
-        metin, delik = _acikliklar_2b(liste, fu, fv, petek_cap, petek_ara, pay,
+        # tabanda ayak varsa petek ayaklardan uzak dursun (ayaklar koselerde, 4-14 mm)
+        pay_y = max(pay, 16) if yuz == "alt" and ayak else pay
+        metin, delik = _acikliklar_2b(liste, fu, fv, petek_cap, petek_ara, pay_y,
                                       donuk=acik in ("on", "arka") and yuz in ("sol", "sag"),
-                                      pay_v=None if yuz == "ust" else _pay_v(fv, pay, petek_cap, duvar))
+                                      pay_v=None if yuz in ("ust", "alt") else _pay_v(fv, pay_y, petek_cap, duvar))
         toplam_delik += delik
         kesimler.append("%s linear_extrude(height = %g) union() { %s }" % (don, duvar + 2, metin))
     kapak_yuzu["petek"] |= "kapak" in petek
@@ -460,16 +463,18 @@ def kasa_kodu(cihaz, bosluk=0.6, duvar=2.5, kose=4.0, acik="on", petek=("sol", "
 
 # --- bolgeyi komutla duzenleme: olusturulmus kasada "1. bolge (kapak): petek ekle", "onde 2 usb-c ac" gibi ---
 # Dil modeli kullanilmaz; komut kelimelerden cozulur, kasa ayar formu degistirilir, kasa sablondan yeniden uretilir.
-BOLGELER = {"1": "kapak", "2": "on", "3": "arka", "4": "sol", "5": "sag"}
-BOLGE_ADLARI = {"kapak": "kapak/üst", "on": "ön", "arka": "arka", "sol": "sol", "sag": "sağ", "genel": "genel"}
+BOLGELER = {"1": "kapak", "2": "on", "3": "arka", "4": "sol", "5": "sag", "6": "alt"}
+BOLGE_ADLARI = {"kapak": "kapak/üst", "on": "ön", "arka": "arka", "sol": "sol", "sag": "sağ", "alt": "alt (taban)", "genel": "genel"}
 _SIL = r"kaldır|kaldir|sil\b|silin|olmasın|olmasin|istemiyorum|iptal|çıkar|cikar|temizle|yok et|kapat"
 
 
 def bolge_bul(t):
     # komut metninden bolge: "2. bolge", "bolge 3", "kapaga", "onune", "sol yuze". Bulunamazsa None
-    m = re.search(r"\b([1-5])\s*\.?\s*(?:numaralı\s+|nolu\s+|no\s+)?bölge|bölge\s*([1-5])\b", t)
+    m = re.search(r"\b([1-6])\s*\.?\s*(?:numaralı\s+|nolu\s+|no\s+)?bölge|bölge\s*([1-6])\b", t)
     if m:
         return BOLGELER[m[1] or m[2]]
+    if re.search(r"\btaban\w*|\balt\s+yüz\w*|\baltına\b|\balta\b|\baltından\b|\balttan\b", t):
+        return "alt"
     m = re.search(r"\b(kapa\w*|üst\w*|ön\w*|arka\w*|sol\w*|sağ\w*)", t)
     if m:
         k = m[1]
@@ -487,7 +492,7 @@ def bolge_duzenle(form, komut, bolge=None):
     t = komut.lower().strip()
     # komutta acikca "3. bolge" yaziyorsa secili bolgeden once gelir; "ust kisma" gibi yuz kelimeleri secimi ezmez
     # (sag yuz seciliyken "ust kisma bir hdmi" kapaga gitmesin)
-    numara = re.search(r"\b([1-5])\s*\.?\s*(?:numaralı\s+|nolu\s+|no\s+)?bölge|bölge\s*([1-5])\b", t)
+    numara = re.search(r"\b([1-6])\s*\.?\s*(?:numaralı\s+|nolu\s+|no\s+)?bölge|bölge\s*([1-6])\b", t)
     bolge = (BOLGELER[numara[1] or numara[2]] if numara else None) or bolge or bolge_bul(t) or "genel"
     yap = []
     f.setdefault("portlar", [])
@@ -644,7 +649,7 @@ def bolge_duzenle(form, komut, bolge=None):
                              % BOLGE_ADLARI[bolge])
         # konum: "ustte/yukarida", "altta/asagida" (yan yuzlerde yukseklik); yatayda yuzdeki digerleriyle birlikte dizilir
         v = None
-        if bolge != "kapak":
+        if bolge in ("on", "arka", "sol", "sag"):
             W, D, H = dis_olcu([float(x) for x in f["cihaz"]], float(f.get("bosluk") or 0.6),
                                float(f.get("duvar") or 2.5), f.get("kapak", "yok"))
             fv = H
