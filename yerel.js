@@ -52,6 +52,29 @@ export function baslat(ctx) {
       ctx.yukleniyor(false);
     }
   };
+  // biblo bolge secimi (onizleme): tiklanan noktalar ya da parca adi -> secilen bolge resim uzerinde boyali
+  ctx.bibloBolge = async (ad, noktalar, esik, metin = null) => {
+    const c = await postJson("biblo/bolge", { ad, noktalar, esik, metin });
+    if (c.hata) { ctx.durum(c.hata, "uyari"); return null; }
+    return c;
+  };
+  // "papyonu one cikar": bolge (tik ya da metin) + islem -> biblo ayni resimlerden yeniden kurulur
+  ctx.bibloDuzenle = async (m, komut, noktalar, esik) => {
+    ctx.yukleniyor(true, "Biblo düzenleniyor… (bölge bulunuyor, yeniden kuruluyor)");
+    try {
+      const c = await postJson("biblo/duzenle", { ad: m.sunucuAd, komut, noktalar, esik, renk_sayisi: m.plan ? m.plan.length : 1 });
+      if (c.hata) throw new Error(c.hata);
+      const s = await isiIzle(c.is, satir => { if (satir.length) ctx.durum("Biblo: " + satir[satir.length - 1]); });
+      if (!s.derlendi) throw new Error(s.hata || "düzenlenemedi");
+      const stl = await (await fetch(`dosya/${c.ad}/model.stl`)).arrayBuffer();
+      ctx.bibloSonucu(m.tarif, stl, c.ad, { ...s, konu: m.konu, tohum: m.tohum }, null, `dosya/${c.ad}/bolge_goster.png`);
+      ctx.durum(`Yapıldı: ${s.yapilan}. Kullanılan bölge resimde turuncu. Geri almak için geçmişten önceki hali aç.`, "iyi");
+    } catch (e) {
+      ctx.durum("Biblo düzenleme: " + e.message, "kotu");
+    } finally {
+      ctx.yukleniyor(false);
+    }
+  };
   // biblonun renk sayisini degistir: plan sunucuda yeniden kurulur, govde ayni
   ctx.bibloRenkDegis = async (ad, n) => {
     ctx.bibloRenk = n;

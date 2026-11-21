@@ -336,7 +336,8 @@ function arayuzuAc() {
   const kasa = model.tur === "kasa", biblo = model.tur === "biblo";
   for (const id of ["duzenModu", "sigdir", "alttan", "delikGoster", "kodGoster", "stlIndir", "komut", "komutUygula"]) $(id).disabled = false;
   // biblo kodla degil yapay zekayla uretildi: kod/komut/delik duzenlemesi yok (olcu ve yeniden uretme ayarlarda)
-  if (biblo) for (const id of ["duzenModu", "delikGoster", "kodGoster", "komut", "komutUygula"]) $(id).disabled = true;
+  if (biblo) for (const id of ["duzenModu", "delikGoster", "kodGoster"]) $(id).disabled = true;
+  if (biblo) $("komut").placeholder = "Örn. papyonu öne çıkar · pelerini biraz içeri al · kollarını kalınlaştır (ya da resimde parçaya tıkla)";
   if (biblo && duzenAcik) $("duzenModu").click();
   $("bolgeSec").hidden = !kasa;
   $("komut").placeholder = kasa
@@ -364,6 +365,23 @@ async function komutUygula() {
   if (!metin || !model) return;
   try {
     let r;
+    if (model.tur === "biblo") {
+      const esik = +($("bibloEsik")?.value || 17);
+      // tiklama yoksa parca yazidan bulunur (CLIPSeg); her zaman isabetli degil: once bulunan bolge resimde gosterilir,
+      // ayni komutla ikinci "Uygula" uygular, yanlissa kisi resimde parcaya tiklayip duzeltir
+      if (!(model.secim || []).length && model.onay !== metin) {
+        const c = await yerel.bibloBolge(model.sunucuAd, [], esik, metin);
+        if (!c) return;
+        $("bibloOn").src = c.png;
+        model.onay = metin;
+        durum("Bulunan bölge resimde turuncu. Doğruysa 'Uygula'ya tekrar bas; değilse resimde doğru parçaya tıkla, sonra Uygula.", "uyari");
+        return;
+      }
+      model.onay = null;
+      $("komut").value = "";
+      await yerel.bibloDuzenle(model, metin, model.secim || [], esik);
+      return;
+    }
     if (model.tur === "kasa") {
       r = cagir("bolge", JSON.stringify(model.form), metin, $("bolgeSec").value || null);
       model.form = r.form;
@@ -419,10 +437,16 @@ function ayarlariGoster() {
     $("ayarTur").textContent = "Biblo (yapay zekâ)";
     $("ayarIcerik").innerHTML = `
       <div class="izgara2">
-        <img src="dosya/${model.sunucuAd}/resim.png" alt="Önden" title="Önden" style="width:100%;border-radius:10px;border:1px solid var(--cizgi)">
+        <img id="bibloOn" src="${model.bolgeResmi || `dosya/${model.sunucuAd}/resim.png`}" alt="Önden" title="Düzenlemek istediğin parçaya tıkla"
+             style="width:100%;border-radius:10px;border:1px solid var(--cizgi);cursor:crosshair">
         <img src="dosya/${model.sunucuAd}/arka.png" alt="Arkadan" title="Arkadan" onerror="this.style.visibility='hidden'" style="width:100%;border-radius:10px;border:1px solid var(--cizgi);transform:scaleX(-1)">
       </div>
-      <p class="ipucu">Önden ve arkadan çizilen resimler 3B'ye çevrildi; ön ve arka yüz kendi resminden. Konu: <i></i></p>
+      <p class="ipucu">Önden ve arkadan çizilen resimler 3B'ye çevrildi. Konu: <i></i></p>
+      <div class="komut" style="margin-top:4px">
+        <span id="bibloSecim" class="ipucu" style="flex:1 1 160px;margin:0">Parça düzenlemek için ön resimde parçaya tıkla (her tık ekler).</span>
+        <select id="bibloEsik" title="Seçim genişliği" style="flex:0 0 auto"><option value="12">Dar seçim</option><option value="17" selected>Normal seçim</option><option value="22">Geniş seçim</option></select>
+        <button id="bibloSecimSil" style="flex:0 0 auto">Seçimi temizle</button>
+      </div>
       <div class="izgara2">
         <label class="alan">Yükseklik (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
         <label class="alan" title="Tek nozulda renk yükseklikle değişir: yazıcı belirlenen katmanlarda durur (M600), filamenti değiştirirsin">Renkli baskı
@@ -435,6 +459,22 @@ function ayarlariGoster() {
       </div>`;
     $("ayarIcerik").querySelector("i").textContent = model.konu || "";
     $("bibloRenk").value = String(model.plan ? Math.min(model.plan.length, 5) : 1);
+    // parcaya tikla: secime ekle, secilen bolge resimde boyali gelir
+    const secimGoster = async () => {
+      if (!model.secim.length) { $("bibloOn").src = `dosya/${model.sunucuAd}/resim.png`; $("bibloSecim").textContent = "Parça düzenlemek için ön resimde parçaya tıkla (her tık ekler)."; return; }
+      const c = await yerel.bibloBolge(model.sunucuAd, model.secim, +$("bibloEsik").value);
+      if (!c) { model.secim.pop(); return; }
+      $("bibloOn").src = c.png;
+      $("bibloSecim").textContent = `Seçili bölge (${model.secim.length} tık). Şimdi komut yaz: öne çıkar, içeri al, kalınlaştır, incelt.`;
+      $("komut").focus();
+    };
+    $("bibloOn").onclick = e => {
+      const r = e.target.getBoundingClientRect();
+      model.secim.push([(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]);
+      secimGoster();
+    };
+    $("bibloEsik").onchange = secimGoster;
+    $("bibloSecimSil").onclick = () => { model.secim = []; secimGoster(); };
     $("bibloRenk").onchange = async () => {
       const c = await yerel.bibloRenkDegis(model.sunucuAd, +$("bibloRenk").value);
       if (!c) return;
@@ -1171,10 +1211,10 @@ const yerel = {
     yerel.modelDegisti?.();
     gecmisKaydet();
   },
-  bibloSonucu(tarif, stl, sunucuAd, s, id = null) {
+  bibloSonucu(tarif, stl, sunucuAd, s, id = null, bolgeResmi = null) {
     model = { id: id || Date.now().toString(36), tarif, tur: "biblo", form: null, kod: "", ozet: "biblo", sunucuAd, sunucudaGuncel: true,
               stl, konu: s.konu, tohum: s.tohum, yukseklik: s.olcu ? Math.round(s.olcu[2]) : 100,
-              plan: s.plan || null, tuketim: s.tuketim || null };
+              plan: s.plan || null, tuketim: s.tuketim || null, secim: [], bolgeResmi };
     secilenDelik = -1;
     arayuzuAc();
     goster(stl, false, model.plan);   // renkli planda onizleme filament renkleriyle
