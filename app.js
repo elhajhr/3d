@@ -311,7 +311,7 @@ async function olustur(tarif) {
   tarif = (tarif ?? $("tarif").value).trim();
   if (!api) return;
   // biblo / figur / heykel: organik sekil -> yerel yapay zeka (resim -> derinlik -> 3B), yalniz yazicinin bilgisayarinda
-  if (/biblo|figür|figur|heykel|oyuncak figür|aksiyon figürü|karakter/i.test(tarif)) {
+  if (/biblo|figür|figur|heykel|oyuncak figür|aksiyon figürü|karakter|maket|minyatür|araba|otomobil|motosiklet|kamyon|uçak|gemi|tren|traktör/i.test(tarif)) {
     if (yerel.biblo) { yerel.biblo(tarif); return; }
     durum("Biblo/figür üretimi yerel yapay zekâ ister; yazıcının bilgisayarındaki uygulamada çalışır (bu sitede kasa ve hazır nesneler var).", "uyari");
     return;
@@ -319,6 +319,10 @@ async function olustur(tarif) {
   let r;
   try { r = cagir("tarif_coz", tarif); } catch (e) {
     // yazicinin bilgisayarinda: hazir sablonlarda olmayan tarifi dil modeline sor
+    // mekanik parca (delik, vida, flans...) dil modeline (OpenSCAD kodu); gercek bir sey ("tofaş slx yap", "eyfel kulesi")
+    // biblo yoluna: sistem once Vikipedi'de arastirir, sonra resim -> 3B
+    const mekanik = /delik|vida|cıvata|civata|somun|flanş|flans|adaptör|adaptor|braket|bağlantı|dişli|disli|menteşe|klips|aparat|yuva|mil|rulman|boru|plaka|kutu|kasa|tutucu|parça|mm/i;
+    if (yerel.biblo && /tanınmadı/.test(e.message) && !mekanik.test(tarif)) { yerel.biblo(tarif); return; }
     if (yerel.dilModeli && /tanınmadı/.test(e.message)) { yerel.dilModeli(tarif); return; }
     durum(e.message, "uyari"); return;
   }
@@ -337,12 +341,14 @@ function arayuzuAc() {
   for (const id of ["duzenModu", "sigdir", "alttan", "delikGoster", "kodGoster", "stlIndir", "komut", "komutUygula"]) $(id).disabled = false;
   // biblo kodla degil yapay zekayla uretildi: kod/komut/delik duzenlemesi yok (olcu ve yeniden uretme ayarlarda)
   if (biblo) for (const id of ["duzenModu", "delikGoster", "kodGoster"]) $(id).disabled = true;
-  if (biblo) $("komut").placeholder = "Örn. papyonu öne çıkar · pelerini biraz içeri al · kollarını kalınlaştır (ya da resimde parçaya tıkla)";
   if (biblo && duzenAcik) $("duzenModu").click();
   $("bolgeSec").hidden = !kasa;
   $("komut").placeholder = kasa
     ? "Komutla düzenle: petek ekle · 20 mm yuvarlak delik aç · 3. bölgeye ethernet ekle · menteşeli yap"
     : "Komutla düzenle: 5 delikli yap · kalınlık 6 mm · yazıyı MEHMET yap · biraz büyüt";
+  if (biblo) $("komut").placeholder = model.kategori === "arac"
+    ? "Örn. tekerlekleri kalınlaştır · tavanı biraz içeri al (ya da resimde parçaya tıkla)"
+    : "Örn. papyonu öne çıkar · pelerini biraz içeri al · kollarını kalınlaştır (ya da resimde parçaya tıkla)";
   $("delikAraclari").hidden = false;  // delik ekleme her modelde (kasada portlar, digerlerinde serbest delik)
   ayarlariGoster();
   if (duzenAcik || delikGoster) duzenKur();
@@ -448,7 +454,7 @@ function ayarlariGoster() {
         <button id="bibloSecimSil" style="flex:0 0 auto">Seçimi temizle</button>
       </div>
       <div class="izgara2">
-        <label class="alan">Yükseklik (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
+        <label class="alan">${model.kategori === "arac" ? "Boy" : "Yükseklik"} (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
         <label class="alan" title="Tek nozulda renk yükseklikle değişir: yazıcı belirlenen katmanlarda durur (M600), filamenti değiştirirsin">Renkli baskı
           <select id="bibloRenk"><option value="1">Tek renk</option><option value="2">2 renk</option><option value="3">3 renk</option>
             <option value="4">4 renk</option><option value="5">5 renk</option></select></label>
@@ -1158,6 +1164,7 @@ function gecmisKaydet() {
   const kod = model.tur === "kasa" ? null : (model.kod.length > 150000 && model.sunucuAd ? null : model.kod);
   liste.unshift({ id: model.id, tarif: model.tarif, tur: model.tur, form: model.form, kod, sunucuAd: model.sunucuAd || null,
                   delikler: model.delikler || [], ozet: model.ozet, konu: model.konu, tohum: model.tohum, yukseklik: model.yukseklik,
+                  kategori: model.kategori, kaynak: model.kaynak,
                   onceki: model.onceki || [],
                   zaman: Date.now() });
   try { localStorage.setItem(ANAHTAR, JSON.stringify(liste.slice(0, 25))); } catch (e) { /* kota / gizli pencere */ }
@@ -1180,7 +1187,7 @@ function gecmisGoster() {
           const y = yerel.modelDegisti && await fetch(`dosya/${m.sunucuAd}/model.stl`);
           if (!y || !y.ok) throw new Error("Bu biblo yalnızca yazıcının bilgisayarında açılabilir.");
           const j = async f => { const r = await fetch(`dosya/${m.sunucuAd}/${f}`); return r.ok ? r.json() : null; };
-          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [0, 0, m.yukseklik], onceki: m.onceki,
+          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [m.yukseklik, 0, m.yukseklik], kategori: m.kategori, kaynak: m.kaynak, onceki: m.onceki,
                                                                           plan: await j("filament.json"), tuketim: await j("tuketim.json") }, m.id);
           $("tarif").value = m.tarif; durum("Geçmişten açıldı: " + m.tarif, "iyi");
           return;
@@ -1224,7 +1231,9 @@ const yerel = {
   },
   bibloSonucu(tarif, stl, sunucuAd, s, id = null, bolgeResmi = null) {
     model = { id: id || Date.now().toString(36), tarif, tur: "biblo", form: null, kod: "", ozet: "biblo", sunucuAd, sunucudaGuncel: true,
-              stl, konu: s.konu, tohum: s.tohum, yukseklik: s.olcu ? Math.round(s.olcu[2]) : 100,
+              stl, konu: s.konu, tohum: s.tohum, kategori: s.kategori || "figur", kaynak: s.kaynak || null,
+              // aracta olcu boydur ("10 cm araba"), figurde yukseklik
+              yukseklik: s.olcu ? Math.round(s.kategori === "arac" ? s.olcu[0] : s.olcu[2]) : 100,
               plan: s.plan || null, tuketim: s.tuketim || null, secim: [], bolgeResmi,
               onceki: s.onceki || [] };  // geri al yigini: onceki surumlerin sunucu klasorleri
     secilenDelik = -1;
