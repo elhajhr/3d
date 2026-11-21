@@ -63,8 +63,8 @@ isci.onmessage = e => {
   bekleyen.delete(e.data.no);
   e.data.hata ? b.red(new Error(e.data.hata)) : b.tamam(e.data);
 };
-function derle(kod) {
-  return new Promise((tamam, red) => { const no = ++isNo; bekleyen.set(no, { tamam, red }); isci.postMessage({ no, kod }); });
+function derle(kod, dosyalar = null) {
+  return new Promise((tamam, red) => { const no = ++isNo; bekleyen.set(no, { tamam, red }); isci.postMessage({ no, kod, dosyalar }); });
 }
 
 // ---------------------------------------------------------------- 3B sahne
@@ -290,7 +290,7 @@ async function cizdir(kameraKoru) {
   try {
     const t0 = performance.now();
     model.sonKod = delikliKod(model);   // serbest delikler (duzenle modu) modelin koduna ayrica eklenir
-    const r = await derle(model.sonKod);
+    const r = await derle(model.sonKod, model.ithal ? { "ithal.stl": model.ithal } : null);
     if (no !== sonCizim) return;  // bu arada daha yeni bir duzenleme geldi
     model.stl = r.stl;
     // tarayicida yeniden derlendi: sunucudaki kopya ve renk plani (yukseklikler degismis olabilir) artik gecersiz
@@ -368,6 +368,11 @@ async function komutUygula() {
       r = cagir("bolge", JSON.stringify(model.form), metin, $("bolgeSec").value || null);
       model.form = r.form;
     } else {
+      if (model.ithal && /büyüt|küçült|ölçek|yükseklik|boy|genişlik|%/.test(metin.toLocaleLowerCase("tr")) && !/delik/.test(metin)) {
+        $("komut").value = "";
+        await ithalOlcek(metin);
+        return;
+      }
       const sd = serbestKomut(metin);   // "uste rastgele 10 delik", "soldan 20 mm sonra 15x8 delik", "5 tane yildiz delik"
       if (sd) {
         $("komut").value = "";
@@ -413,8 +418,11 @@ function ayarlariGoster() {
   if (model.tur === "biblo") {
     $("ayarTur").textContent = "Biblo (yapay zekâ)";
     $("ayarIcerik").innerHTML = `
-      <img src="dosya/${model.sunucuAd}/resim.png" alt="Biblonun çizilen resmi" style="width:100%;max-width:280px;display:block;margin:0 auto;border-radius:10px;border:1px solid var(--cizgi)">
-      <p class="ipucu">Önce bu resim çizildi, sonra 3B'ye çevrildi. Ön yüz resimden, arka yüz tahmin (daha sade). Konu: <i></i></p>
+      <div class="izgara2">
+        <img src="dosya/${model.sunucuAd}/resim.png" alt="Önden" title="Önden" style="width:100%;border-radius:10px;border:1px solid var(--cizgi)">
+        <img src="dosya/${model.sunucuAd}/arka.png" alt="Arkadan" title="Arkadan" onerror="this.style.visibility='hidden'" style="width:100%;border-radius:10px;border:1px solid var(--cizgi);transform:scaleX(-1)">
+      </div>
+      <p class="ipucu">Önden ve arkadan çizilen resimler 3B'ye çevrildi; ön ve arka yüz kendi resminden. Konu: <i></i></p>
       <label class="alan">Yükseklik (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
       <div class="izgara2" style="margin-top:10px">
         <button id="bibloTekrar" title="Aynı tarif, başka bir resim">↻ Başka bir tane dene</button>
@@ -422,7 +430,8 @@ function ayarlariGoster() {
       </div>`;
     $("ayarIcerik").querySelector("i").textContent = model.konu || "";
     $("bibloTekrar").onclick = () => yerel.biblo(model.tarif.replace(/\d+(?:[.,]\d+)?\s*(cm|mm)\s*x?/gi, "") + " " + $("bibloYuk").value + " mm");
-    $("bibloOlcu").onclick = () => yerel.biblo(model.tarif.replace(/\d+(?:[.,]\d+)?\s*(cm|mm)\s*x?/gi, "") + " " + $("bibloYuk").value + " mm", model.tohum);
+    // ayni biblo, yeni boy: resimler yeniden cizilmez (ayni model, birkac saniye)
+    $("bibloOlcu").onclick = () => yerel.biblo(model.tarif, null, model.sunucuAd, +$("bibloYuk").value);
     return;
   }
   $("ayarTur").textContent = model.tur === "kasa" ? "Kasa şablonu" : "Hazır nesne";
@@ -913,6 +922,46 @@ renderer.domElement.addEventListener("pointerup", e => {
   }
 });
 
+// --- hazir STL ice aktarma (Printables, Thingiverse vb.'den kendin indirdigin model): tabla ortasina oturtulur,
+// sonra olcek, serbest delik, dilimleme ve baski normal calisir. Dosya yalniz bu tarayicida islenir.
+async function stlIceAktar(dosya) {
+  if (!dosya || !api) return;
+  if (dosya.size > 60e6) { durum("Dosya çok büyük (60 MB üstü).", "uyari"); return; }
+  const veri = await dosya.arrayBuffer();
+  let g;
+  try { g = new STLLoader().parse(veri); } catch (e) { durum("STL okunamadı: " + e.message, "kotu"); return; }
+  g.computeBoundingBox();
+  const b = g.boundingBox;  // STL koordinati (Z yukari): XY ortala, tabana oturt
+  const t = [-(b.min.x + b.max.x) / 2, -(b.min.y + b.max.y) / 2, -b.min.z].map(v => +v.toFixed(3));
+  const boy = [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z];
+  const ad = dosya.name.replace(/[^\w.\-çğıöşüÇĞİÖŞÜ ]/g, "_");
+  model = { id: Date.now().toString(36), tarif: "İçe aktarılan: " + ad, tur: "nesne", form: null, ithal: veri, ithalAd: ad,
+            kod: `// İçe aktarılan model: ${ad} (${boy.map(v => v.toFixed(1)).join(" x ")} mm)\n${ISARET}\ntranslate([${t}]) import("ithal.stl", convexity = 10);\n`,
+            ozet: "içe aktarıldı" };
+  secilenDelik = -1;
+  arayuzuAc();
+  try {
+    await cizdir(false);
+    const uyari = Math.max(...boy) > 300 ? " Tablaya (300 mm) sığmıyor: komut kutusuna örn. 'yükseklik 150 mm' yaz." : "";
+    durum(`İçe aktarıldı: ${ad}, ${boy.map(v => v.toFixed(1)).join(" × ")} mm.${uyari} Boyut için 'yükseklik 80 mm' ya da '%50 küçült', delik için Düzenle.`, uyari ? "uyari" : "iyi");
+  } catch (e) { /* durum yazildi */ }
+}
+// ice aktarilan modelde boyut komutu: "yukseklik 80 mm", "%50 kucult", "biraz buyut", "genislik 60 mm"
+async function ithalOlcek(metin) {
+  const t = metin.toLocaleLowerCase("tr"), b = parca.geometry.boundingBox.getSize(new THREE.Vector3());
+  const mm = t.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)/), yuzde = t.match(/%\s*(\d+)|(\d+)\s*%/);
+  let oran;
+  if (mm) {
+    const hedef = parseFloat(mm[1].replace(",", ".")) * (mm[2] === "cm" ? 10 : 1);
+    oran = hedef / (/genişlik|\ben\b/.test(t) ? b.x : /derinlik/.test(t) ? b.z : b.y);  // varsayilan: yukseklik
+  } else if (yuzde) {
+    const k = +(yuzde[1] || yuzde[2]) / 100;
+    oran = /küçült/.test(t) ? 1 - k : 1 + k;
+  } else oran = /küçült/.test(t) ? 0.8 : 1.25;
+  if (!(oran > 0.01 && oran < 100)) { durum("Boyut anlaşılmadı. Örnek: 'yükseklik 80 mm', '%50 küçült'.", "uyari"); return; }
+  await olcekUygula(-1, oran);
+}
+
 async function olcekUygula(eksen, oran) {
   if (!isFinite(oran) || Math.abs(oran - 1) < 0.005) return;
   let kod = model.kod;
@@ -921,14 +970,17 @@ async function olcekUygula(eksen, oran) {
     kod = kod.slice(0, i) + "\nolcek_x = 1;  // çerçeveden ölçek\nolcek_y = 1;  // çerçeveden ölçek\nolcek_z = 1;  // çerçeveden ölçek\n" +
           "scale([olcek_x, olcek_y, olcek_z]) {" + kod.slice(i) + "\n}\n";
   }
-  const ad = ["olcek_x", "olcek_y", "olcek_z"][eksen];
-  const simdiki = +(kod.match(new RegExp("^" + ad + "\\s*=\\s*(-?[\\d.]+)", "m")) || [0, 1])[1];
+  const adlar = eksen < 0 ? ["olcek_x", "olcek_y", "olcek_z"] : [["olcek_x", "olcek_y", "olcek_z"][eksen]];
+  const deger = a => { const m = kod.match(new RegExp("^" + a + " *= *(-?[0-9.]+)", "m")); return m ? +m[1] : 1; };
+  const simdiki = deger(adlar[0]);
+  const yeni = {};
+  for (const a of adlar) yeni[a] = Math.round(deger(a) * oran * 1000) / 1000;
   try {
-    const r = cagir("degerler", kod, JSON.stringify({ [ad]: Math.round(simdiki * oran * 1000) / 1000 }));
+    const r = cagir("degerler", kod, JSON.stringify(yeni));
     model.kod = r.kod;
     ayarlariGoster();
     await cizdir(true);
-    durum(`Ölçek: ${["genişlik", "derinlik", "yükseklik"][eksen]} ×${(simdiki * oran).toFixed(2)}`, "iyi");
+    durum(eksen < 0 ? `Ölçek: tüm model ×${(simdiki * oran).toFixed(2)}` : `Ölçek: ${["genişlik", "derinlik", "yükseklik"][eksen]} ×${(simdiki * oran).toFixed(2)}`, "iyi");
     gecmisKaydet();
   } catch (e) { durum(e.message, "uyari"); }
 }
@@ -1021,6 +1073,7 @@ $("stlIndir").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 };
 $("olustur").onclick = () => olustur();
+$("stlDosya").onchange = () => { stlIceAktar($("stlDosya").files[0]); $("stlDosya").value = ""; };
 $("tarif").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) olustur(); });
 $("komutUygula").onclick = komutUygula;
 $("komut").addEventListener("keydown", e => { if (e.key === "Enter") komutUygula(); });
@@ -1076,6 +1129,7 @@ function gecmisGoster() {
           }
         }
         if (!model.kod) throw new Error("Bu modelin kodu yalnızca yazıcının bilgisayarında var.");
+        if (/import\("ithal\.stl"/.test(model.kod)) throw new Error("İçe aktarılan STL dosyası saklanmaz; '📂 Hazır STL aç' ile yeniden aç.");
         secilenDelik = -1; $("tarif").value = m.tarif;
         arayuzuAc();
         await cizdir(false);

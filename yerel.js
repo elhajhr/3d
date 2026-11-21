@@ -34,11 +34,11 @@ export function baslat(ctx) {
   const modelDegisti = ctx.modelDegisti;
   ctx.modelDegisti = () => { modelDegisti(); filamentGoster(ctx.model()); };
   // biblo: yerel yapay zeka (sd-turbo resim -> Depth Anything derinlik -> 3B govde). Ilk calisma modelleri yukler (~1 dk)
-  ctx.biblo = async (tarif, tohum = null) => {
+  ctx.biblo = async (tarif, tohum = null, kaynak = null, yukseklik = null) => {
     ctx.yukleniyor(true, "Biblo hazırlanıyor… (resim → derinlik → 3B, ilk seferde ~1-2 dk)");
     ctx.durum("Biblo: başlıyor…");
     try {
-      const c = await postJson("biblo", { tarif, tohum });
+      const c = await postJson("biblo", { tarif, tohum, kaynak, yukseklik });
       if (c.hata) throw new Error(c.hata);
       const s = await isiIzle(c.is, satir => { if (satir.length) ctx.durum("Biblo: " + satir[satir.length - 1]); });
       if (!s.derlendi) throw new Error(s.hata || "üretilemedi");

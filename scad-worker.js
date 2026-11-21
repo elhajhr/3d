@@ -33,12 +33,14 @@ async function ornek(gunluk) {
 }
 
 self.onmessage = async (e) => {
-  const { no, kod } = e.data;
+  const { no, kod, dosyalar } = e.data;
   const gunluk = [];
   try {
     await hazirla();
     const inst = await ornek(gunluk);
     inst.FS.writeFile("/model.scad", kod);
+    // ice aktarilan model (STL yukle): kod import("ithal.stl") ile okur
+    for (const [ad, veri] of Object.entries(dosyalar || {})) inst.FS.writeFile("/" + ad, new Uint8Array(veri));
     const bas = performance.now();
     let rc;
     try { rc = inst.callMain(["/model.scad", "--backend=manifold", "--export-format=binstl", "-o", "/model.stl"]); }
