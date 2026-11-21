@@ -423,12 +423,27 @@ function ayarlariGoster() {
         <img src="dosya/${model.sunucuAd}/arka.png" alt="Arkadan" title="Arkadan" onerror="this.style.visibility='hidden'" style="width:100%;border-radius:10px;border:1px solid var(--cizgi);transform:scaleX(-1)">
       </div>
       <p class="ipucu">Önden ve arkadan çizilen resimler 3B'ye çevrildi; ön ve arka yüz kendi resminden. Konu: <i></i></p>
-      <label class="alan">Yükseklik (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
+      <div class="izgara2">
+        <label class="alan">Yükseklik (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
+        <label class="alan" title="Tek nozulda renk yükseklikle değişir: yazıcı belirlenen katmanlarda durur (M600), filamenti değiştirirsin">Renkli baskı
+          <select id="bibloRenk"><option value="1">Tek renk</option><option value="2">2 renk</option><option value="3">3 renk</option>
+            <option value="4">4 renk</option><option value="5">5 renk</option></select></label>
+      </div>
       <div class="izgara2" style="margin-top:10px">
         <button id="bibloTekrar" title="Aynı tarif, başka bir resim">↻ Başka bir tane dene</button>
         <button id="bibloOlcu" class="ana" title="Aynı resimden, yeni yükseklikle">Bu yükseklikle yap</button>
       </div>`;
     $("ayarIcerik").querySelector("i").textContent = model.konu || "";
+    $("bibloRenk").value = String(model.plan ? Math.min(model.plan.length, 5) : 1);
+    $("bibloRenk").onchange = async () => {
+      const c = await yerel.bibloRenkDegis(model.sunucuAd, +$("bibloRenk").value);
+      if (!c) return;
+      model.plan = c.plan; model.tuketim = c.tuketim;
+      goster(model.stl, true, model.plan);
+      yerel.modelDegisti?.();
+      gecmisKaydet();
+      durum(model.plan ? `${model.plan.length} renkli plan: ` + model.plan.map(p => p.adlar[0]).join(" → ") : "Tek renk basılacak.", "iyi");
+    };
     $("bibloTekrar").onclick = () => yerel.biblo(model.tarif.replace(/\d+(?:[.,]\d+)?\s*(cm|mm)\s*x?/gi, "") + " " + $("bibloYuk").value + " mm");
     // ayni biblo, yeni boy: resimler yeniden cizilmez (ayni model, birkac saniye)
     $("bibloOlcu").onclick = () => yerel.biblo(model.tarif, null, model.sunucuAd, +$("bibloYuk").value);
@@ -1113,7 +1128,9 @@ function gecmisGoster() {
         else if (m.tur === "biblo") {
           const y = yerel.modelDegisti && await fetch(`dosya/${m.sunucuAd}/model.stl`);
           if (!y || !y.ok) throw new Error("Bu biblo yalnızca yazıcının bilgisayarında açılabilir.");
-          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [0, 0, m.yukseklik] }, m.id);
+          const j = async f => { const r = await fetch(`dosya/${m.sunucuAd}/${f}`); return r.ok ? r.json() : null; };
+          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [0, 0, m.yukseklik],
+                                                                          plan: await j("filament.json"), tuketim: await j("tuketim.json") }, m.id);
           $("tarif").value = m.tarif; durum("Geçmişten açıldı: " + m.tarif, "iyi");
           return;
         }
@@ -1156,10 +1173,11 @@ const yerel = {
   },
   bibloSonucu(tarif, stl, sunucuAd, s, id = null) {
     model = { id: id || Date.now().toString(36), tarif, tur: "biblo", form: null, kod: "", ozet: "biblo", sunucuAd, sunucudaGuncel: true,
-              stl, konu: s.konu, tohum: s.tohum, yukseklik: s.olcu ? Math.round(s.olcu[2]) : 100 };
+              stl, konu: s.konu, tohum: s.tohum, yukseklik: s.olcu ? Math.round(s.olcu[2]) : 100,
+              plan: s.plan || null, tuketim: s.tuketim || null };
     secilenDelik = -1;
     arayuzuAc();
-    goster(stl, false);
+    goster(stl, false, model.plan);   // renkli planda onizleme filament renkleriyle
     yerel.modelDegisti?.();
     gecmisKaydet();
   },

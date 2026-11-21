@@ -34,22 +34,30 @@ export function baslat(ctx) {
   const modelDegisti = ctx.modelDegisti;
   ctx.modelDegisti = () => { modelDegisti(); filamentGoster(ctx.model()); };
   // biblo: yerel yapay zeka (sd-turbo resim -> Depth Anything derinlik -> 3B govde). Ilk calisma modelleri yukler (~1 dk)
-  ctx.biblo = async (tarif, tohum = null, kaynak = null, yukseklik = null) => {
+  ctx.biblo = async (tarif, tohum = null, kaynak = null, yukseklik = null, renk_sayisi = null) => {
     ctx.yukleniyor(true, "Biblo hazırlanıyor… (resim → derinlik → 3B, ilk seferde ~1-2 dk)");
     ctx.durum("Biblo: başlıyor…");
     try {
-      const c = await postJson("biblo", { tarif, tohum, kaynak, yukseklik });
+      const c = await postJson("biblo", { tarif, tohum, kaynak, yukseklik, renk_sayisi: renk_sayisi ?? ctx.bibloRenk ?? 3 });
       if (c.hata) throw new Error(c.hata);
       const s = await isiIzle(c.is, satir => { if (satir.length) ctx.durum("Biblo: " + satir[satir.length - 1]); });
       if (!s.derlendi) throw new Error(s.hata || "üretilemedi");
       const stl = await (await fetch(`dosya/${c.ad}/model.stl`)).arrayBuffer();
       ctx.bibloSonucu(tarif, stl, c.ad, s);
-      ctx.durum(`Biblo hazır: ${s.olcu.map(x => x.toFixed(0)).join(" × ")} mm. Beğenmezsen "Başka bir tane dene".`, "iyi");
+      ctx.durum(`Biblo hazır: ${s.olcu.map(x => x.toFixed(0)).join(" × ")} mm` + (s.plan ? `, ${s.plan.length} renk (filament sırası aşağıda)` : ", tek renk") +
+                `. Beğenmezsen "Başka bir tane dene".`, "iyi");
     } catch (e) {
       ctx.durum("Biblo: " + e.message, "kotu");
     } finally {
       ctx.yukleniyor(false);
     }
+  };
+  // biblonun renk sayisini degistir: plan sunucuda yeniden kurulur, govde ayni
+  ctx.bibloRenkDegis = async (ad, n) => {
+    ctx.bibloRenk = n;
+    const c = await postJson("biblo/renk", { ad, renk_sayisi: n });
+    if (c.hata) { ctx.durum("Renk planı: " + c.hata, "kotu"); return null; }
+    return c;
   };
   // hazir sablonun tanimadigi tarif: dil modeli (Ollama) OpenSCAD kodu yazar, sunucuda derlenir
   ctx.dilModeli = async tarif => {
@@ -218,7 +226,8 @@ const FILAMENTLER = [
   { ad: "Kırmızı", renk: "#d32f2f" }, { ad: "Bordo", renk: "#7a1f35" }, { ad: "Turuncu", renk: "#ef6c00" },
   { ad: "Sarı", renk: "#f9d71c" }, { ad: "Yeşil", renk: "#2e7d32" }, { ad: "Mavi", renk: "#1e64c8" },
   { ad: "Açık mavi", renk: "#6cb4ee" }, { ad: "Lacivert", renk: "#1a2a6c" }, { ad: "Mor", renk: "#6a1b9a" },
-  { ad: "Altın", renk: "#c9a227" }, { ad: "Şeffaf", renk: "#d8eef2" },
+  { ad: "Altın", renk: "#c9a227" }, { ad: "Kahverengi", renk: "#6d4c33" }, { ad: "Bej", renk: "#d8b88f" },
+  { ad: "Şeffaf", renk: "#d8eef2" },
 ];
 const ORNEK_TARIF = {
   logo: "Bu logoyla anahtarlık yap; logo üst yüzde kabartmalı olsun",
