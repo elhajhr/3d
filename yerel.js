@@ -43,7 +43,9 @@ export function baslat(ctx) {
       const s = await isiIzle(c.is, satir => { if (satir.length) ctx.durum("Biblo: " + satir[satir.length - 1]); });
       if (!s.derlendi) throw new Error(s.hata || "üretilemedi");
       const stl = await (await fetch(`dosya/${c.ad}/model.stl`)).arrayBuffer();
-      ctx.bibloSonucu(tarif, stl, c.ad, s);
+      const eski = ctx.model();  // ayni bibloyu yeni boyda kurduysan geri alinabilsin
+      const yigin = kaynak && eski && eski.sunucuAd === kaynak ? [...(eski.onceki || []), kaynak] : [];
+      ctx.bibloSonucu(tarif, stl, c.ad, { ...s, onceki: yigin }, kaynak && eski ? eski.id : null);
       ctx.durum(`Biblo hazır: ${s.olcu.map(x => x.toFixed(0)).join(" × ")} mm` + (s.plan ? `, ${s.plan.length} renk (filament sırası aşağıda)` : ", tek renk") +
                 `. Beğenmezsen "Başka bir tane dene".`, "iyi");
     } catch (e) {
@@ -67,7 +69,8 @@ export function baslat(ctx) {
       const s = await isiIzle(c.is, satir => { if (satir.length) ctx.durum("Biblo: " + satir[satir.length - 1]); });
       if (!s.derlendi) throw new Error(s.hata || "düzenlenemedi");
       const stl = await (await fetch(`dosya/${c.ad}/model.stl`)).arrayBuffer();
-      ctx.bibloSonucu(m.tarif, stl, c.ad, { ...s, konu: m.konu, tohum: m.tohum }, null, `dosya/${c.ad}/bolge_goster.png`);
+      ctx.bibloSonucu(m.tarif, stl, c.ad, { ...s, konu: m.konu, tohum: m.tohum, onceki: [...(m.onceki || []), m.sunucuAd] },
+                      m.id, `dosya/${c.ad}/bolge_goster.png`);
       ctx.durum(`Yapıldı: ${s.yapilan}. Kullanılan bölge resimde turuncu. Geri almak için geçmişten önceki hali aç.`, "iyi");
     } catch (e) {
       ctx.durum("Biblo düzenleme: " + e.message, "kotu");

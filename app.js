@@ -456,7 +456,8 @@ function ayarlariGoster() {
       <div class="izgara2" style="margin-top:10px">
         <button id="bibloTekrar" title="Aynı tarif, başka bir resim">↻ Başka bir tane dene</button>
         <button id="bibloOlcu" class="ana" title="Aynı resimden, yeni yükseklikle">Bu yükseklikle yap</button>
-      </div>`;
+      </div>
+      <button id="bibloGeri" class="genis" ${model.onceki && model.onceki.length ? "" : "hidden"} title="Son düzenlemeyi geri al">↶ Geri al (${(model.onceki || []).length})</button>`;
     $("ayarIcerik").querySelector("i").textContent = model.konu || "";
     $("bibloRenk").value = String(model.plan ? Math.min(model.plan.length, 5) : 1);
     // parcaya tikla: secime ekle, secilen bolge resimde boyali gelir
@@ -475,6 +476,15 @@ function ayarlariGoster() {
     };
     $("bibloEsik").onchange = secimGoster;
     $("bibloSecimSil").onclick = () => { model.secim = []; secimGoster(); };
+    $("bibloGeri").onclick = async () => {
+      const ad = model.onceki[model.onceki.length - 1];
+      const al = async (f, tip) => { const r = await fetch(`dosya/${ad}/${f}`); return r.ok ? (tip === "b" ? r.arrayBuffer() : r.json()) : null; };
+      const stl = await al("model.stl", "b");
+      if (!stl) { durum("Önceki sürüm bulunamadı.", "uyari"); return; }
+      yerel.bibloSonucu(model.tarif, stl, ad, { konu: model.konu, tohum: model.tohum, plan: await al("filament.json"),
+                                                tuketim: await al("tuketim.json"), onceki: model.onceki.slice(0, -1) }, model.id);
+      durum("Geri alındı.", "iyi");
+    };
     $("bibloRenk").onchange = async () => {
       const c = await yerel.bibloRenkDegis(model.sunucuAd, +$("bibloRenk").value);
       if (!c) return;
@@ -1148,6 +1158,7 @@ function gecmisKaydet() {
   const kod = model.tur === "kasa" ? null : (model.kod.length > 150000 && model.sunucuAd ? null : model.kod);
   liste.unshift({ id: model.id, tarif: model.tarif, tur: model.tur, form: model.form, kod, sunucuAd: model.sunucuAd || null,
                   delikler: model.delikler || [], ozet: model.ozet, konu: model.konu, tohum: model.tohum, yukseklik: model.yukseklik,
+                  onceki: model.onceki || [],
                   zaman: Date.now() });
   try { localStorage.setItem(ANAHTAR, JSON.stringify(liste.slice(0, 25))); } catch (e) { /* kota / gizli pencere */ }
   gecmisGoster();
@@ -1169,7 +1180,7 @@ function gecmisGoster() {
           const y = yerel.modelDegisti && await fetch(`dosya/${m.sunucuAd}/model.stl`);
           if (!y || !y.ok) throw new Error("Bu biblo yalnızca yazıcının bilgisayarında açılabilir.");
           const j = async f => { const r = await fetch(`dosya/${m.sunucuAd}/${f}`); return r.ok ? r.json() : null; };
-          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [0, 0, m.yukseklik],
+          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [0, 0, m.yukseklik], onceki: m.onceki,
                                                                           plan: await j("filament.json"), tuketim: await j("tuketim.json") }, m.id);
           $("tarif").value = m.tarif; durum("Geçmişten açıldı: " + m.tarif, "iyi");
           return;
@@ -1214,7 +1225,8 @@ const yerel = {
   bibloSonucu(tarif, stl, sunucuAd, s, id = null, bolgeResmi = null) {
     model = { id: id || Date.now().toString(36), tarif, tur: "biblo", form: null, kod: "", ozet: "biblo", sunucuAd, sunucudaGuncel: true,
               stl, konu: s.konu, tohum: s.tohum, yukseklik: s.olcu ? Math.round(s.olcu[2]) : 100,
-              plan: s.plan || null, tuketim: s.tuketim || null, secim: [], bolgeResmi };
+              plan: s.plan || null, tuketim: s.tuketim || null, secim: [], bolgeResmi,
+              onceki: s.onceki || [] };  // geri al yigini: onceki surumlerin sunucu klasorleri
     secilenDelik = -1;
     arayuzuAc();
     goster(stl, false, model.plan);   // renkli planda onizleme filament renkleriyle
