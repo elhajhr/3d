@@ -33,6 +33,24 @@ export function baslat(ctx) {
   gorselKur(ctx);
   const modelDegisti = ctx.modelDegisti;
   ctx.modelDegisti = () => { modelDegisti(); filamentGoster(ctx.model()); };
+  // biblo: yerel yapay zeka (sd-turbo resim -> Depth Anything derinlik -> 3B govde). Ilk calisma modelleri yukler (~1 dk)
+  ctx.biblo = async (tarif, tohum = null) => {
+    ctx.yukleniyor(true, "Biblo hazırlanıyor… (resim → derinlik → 3B, ilk seferde ~1-2 dk)");
+    ctx.durum("Biblo: başlıyor…");
+    try {
+      const c = await postJson("biblo", { tarif, tohum });
+      if (c.hata) throw new Error(c.hata);
+      const s = await isiIzle(c.is, satir => { if (satir.length) ctx.durum("Biblo: " + satir[satir.length - 1]); });
+      if (!s.derlendi) throw new Error(s.hata || "üretilemedi");
+      const stl = await (await fetch(`dosya/${c.ad}/model.stl`)).arrayBuffer();
+      ctx.bibloSonucu(tarif, stl, c.ad, s);
+      ctx.durum(`Biblo hazır: ${s.olcu.map(x => x.toFixed(0)).join(" × ")} mm. Beğenmezsen "Başka bir tane dene".`, "iyi");
+    } catch (e) {
+      ctx.durum("Biblo: " + e.message, "kotu");
+    } finally {
+      ctx.yukleniyor(false);
+    }
+  };
   // hazir sablonun tanimadigi tarif: dil modeli (Ollama) OpenSCAD kodu yazar, sunucuda derlenir
   ctx.dilModeli = async tarif => {
     ctx.yukleniyor(true, "Dil modeli tasarlıyor… (yarım dakika – birkaç dakika)");
@@ -71,7 +89,8 @@ function baskiKur(ctx) {
     if (r.yon && r.yon !== "olduğu gibi") s.push(`<b>Baskı yönü:</b> ${r.yon} çevrildi (en az destekli yön; önizlemedeki duruştan farklı basılacak).`);
     for (const u of r.uyarilar || []) s.push(`<span style="color:var(--uyari)">⚠ ${u}</span>`);
     if (r.m600 && r.m600.length) s.push(`Renk değişimi (M600): ${r.m600.map(z => z.toFixed(1) + " mm").join(", ")} katmanlarından önce yazıcı durup filament değiştirmeni bekleyecek.`);
-    if (tamam && !(r.uyarilar || []).length) s.push(`<span style="color:var(--iyi)">Ön kontrol temiz: tablaya sığıyor, destek gerekmiyor.</span>`);
+    if (tamam && ctx.model()?.tur === "biblo") s.push(`<span style="color:var(--iyi)">Biblo kaidesi tablada, dik basılacak; destek açık (süre ve gram destek dahil).</span>`);
+    else if (tamam && !(r.uyarilar || []).length) s.push(`<span style="color:var(--iyi)">Ön kontrol temiz: tablaya sığıyor, destek gerekmiyor.</span>`);
     $("bRapor").innerHTML = s.join("<br>");
   }
 

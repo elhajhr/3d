@@ -310,6 +310,12 @@ async function cizdir(kameraKoru) {
 async function olustur(tarif) {
   tarif = (tarif ?? $("tarif").value).trim();
   if (!api) return;
+  // biblo / figur / heykel: organik sekil -> yerel yapay zeka (resim -> derinlik -> 3B), yalniz yazicinin bilgisayarinda
+  if (/biblo|figür|figur|heykel|oyuncak figür|aksiyon figürü|karakter/i.test(tarif)) {
+    if (yerel.biblo) { yerel.biblo(tarif); return; }
+    durum("Biblo/figür üretimi yerel yapay zekâ ister; yazıcının bilgisayarındaki uygulamada çalışır (bu sitede kasa ve hazır nesneler var).", "uyari");
+    return;
+  }
   let r;
   try { r = cagir("tarif_coz", tarif); } catch (e) {
     // yazicinin bilgisayarinda: hazir sablonlarda olmayan tarifi dil modeline sor
@@ -327,8 +333,11 @@ async function olustur(tarif) {
 }
 
 function arayuzuAc() {
-  const kasa = model.tur === "kasa";
+  const kasa = model.tur === "kasa", biblo = model.tur === "biblo";
   for (const id of ["duzenModu", "sigdir", "alttan", "delikGoster", "kodGoster", "stlIndir", "komut", "komutUygula"]) $(id).disabled = false;
+  // biblo kodla degil yapay zekayla uretildi: kod/komut/delik duzenlemesi yok (olcu ve yeniden uretme ayarlarda)
+  if (biblo) for (const id of ["duzenModu", "delikGoster", "kodGoster", "komut", "komutUygula"]) $(id).disabled = true;
+  if (biblo && duzenAcik) $("duzenModu").click();
   $("bolgeSec").hidden = !kasa;
   $("komut").placeholder = kasa
     ? "Komutla düzenle: petek ekle · 20 mm yuvarlak delik aç · 3. bölgeye ethernet ekle · menteşeli yap"
@@ -401,6 +410,21 @@ const sayiAlani = (etiket, deger, ad, adim = "0.1") =>
 function ayarlariGoster() {
   $("ayarKart").hidden = !model;
   if (!model) return;
+  if (model.tur === "biblo") {
+    $("ayarTur").textContent = "Biblo (yapay zekâ)";
+    $("ayarIcerik").innerHTML = `
+      <img src="dosya/${model.sunucuAd}/resim.png" alt="Biblonun çizilen resmi" style="width:100%;max-width:280px;display:block;margin:0 auto;border-radius:10px;border:1px solid var(--cizgi)">
+      <p class="ipucu">Önce bu resim çizildi, sonra 3B'ye çevrildi. Ön yüz resimden, arka yüz tahmin (daha sade). Konu: <i></i></p>
+      <label class="alan">Yükseklik (mm)<input type="number" id="bibloYuk" min="20" max="280" step="5" value="${model.yukseklik || 100}"></label>
+      <div class="izgara2" style="margin-top:10px">
+        <button id="bibloTekrar" title="Aynı tarif, başka bir resim">↻ Başka bir tane dene</button>
+        <button id="bibloOlcu" class="ana" title="Aynı resimden, yeni yükseklikle">Bu yükseklikle yap</button>
+      </div>`;
+    $("ayarIcerik").querySelector("i").textContent = model.konu || "";
+    $("bibloTekrar").onclick = () => yerel.biblo(model.tarif.replace(/\d+(?:[.,]\d+)?\s*(cm|mm)\s*x?/gi, "") + " " + $("bibloYuk").value + " mm");
+    $("bibloOlcu").onclick = () => yerel.biblo(model.tarif.replace(/\d+(?:[.,]\d+)?\s*(cm|mm)\s*x?/gi, "") + " " + $("bibloYuk").value + " mm", model.tohum);
+    return;
+  }
   $("ayarTur").textContent = model.tur === "kasa" ? "Kasa şablonu" : "Hazır nesne";
   const k = $("ayarIcerik");
   if (model.tur === "kasa") {
@@ -1015,7 +1039,8 @@ function gecmisKaydet() {
   // logo kodlari cok buyuk (cokgenler): 150 KB'tan buyukse yalniz sunucudaki klasor adi saklanir, acilinca oradan gelir
   const kod = model.tur === "kasa" ? null : (model.kod.length > 150000 && model.sunucuAd ? null : model.kod);
   liste.unshift({ id: model.id, tarif: model.tarif, tur: model.tur, form: model.form, kod, sunucuAd: model.sunucuAd || null,
-                  delikler: model.delikler || [], ozet: model.ozet, zaman: Date.now() });
+                  delikler: model.delikler || [], ozet: model.ozet, konu: model.konu, tohum: model.tohum, yukseklik: model.yukseklik,
+                  zaman: Date.now() });
   try { localStorage.setItem(ANAHTAR, JSON.stringify(liste.slice(0, 25))); } catch (e) { /* kota / gizli pencere */ }
   gecmisGoster();
 }
@@ -1024,7 +1049,7 @@ function gecmisGoster() {
   $("gecmisBos").hidden = liste.length > 0;
   $("gecmis").replaceChildren(...liste.map(m => {
     const li = document.createElement("li");
-    li.innerHTML = `<small>${m.tur === "kasa" ? "Kasa" : "Nesne"}</small><span></span>`;
+    li.innerHTML = `<small>${m.tur === "kasa" ? "Kasa" : m.tur === "biblo" ? "Biblo" : "Nesne"}</small><span></span>`;
     li.querySelector("span").textContent = m.tarif;
     li.title = m.tarif;
     li.onclick = async () => {
@@ -1032,6 +1057,13 @@ function gecmisGoster() {
       model = { ...m };
       try {
         if (m.tur === "kasa") { const r = cagir("kasa_uret", JSON.stringify(m.form)); model.form = r.form; model.kod = r.kod; }
+        else if (m.tur === "biblo") {
+          const y = yerel.modelDegisti && await fetch(`dosya/${m.sunucuAd}/model.stl`);
+          if (!y || !y.ok) throw new Error("Bu biblo yalnızca yazıcının bilgisayarında açılabilir.");
+          yerel.bibloSonucu(m.tarif, await y.arrayBuffer(), m.sunucuAd, { konu: m.konu, tohum: m.tohum, olcu: [0, 0, m.yukseklik] }, m.id);
+          $("tarif").value = m.tarif; durum("Geçmişten açıldı: " + m.tarif, "iyi");
+          return;
+        }
         else if (m.sunucuAd && yerel.modelDegisti) {
           // yazicinin bilgisayarinda: sunucudaki STL ve renk plani (logo renkleri ve M600 korunur)
           const al = async (f, tur) => { const y = await fetch(`dosya/${m.sunucuAd}/${f}`); return y.ok ? (tur === "b" ? y.arrayBuffer() : tur === "j" ? y.json() : y.text()) : null; };
@@ -1068,6 +1100,15 @@ const yerel = {
     yerel.modelDegisti?.();
     gecmisKaydet();
   },
+  bibloSonucu(tarif, stl, sunucuAd, s, id = null) {
+    model = { id: id || Date.now().toString(36), tarif, tur: "biblo", form: null, kod: "", ozet: "biblo", sunucuAd, sunucudaGuncel: true,
+              stl, konu: s.konu, tohum: s.tohum, yukseklik: s.olcu ? Math.round(s.olcu[2]) : 100 };
+    secilenDelik = -1;
+    arayuzuAc();
+    goster(stl, false);
+    yerel.modelDegisti?.();
+    gecmisKaydet();
+  },
   dilModeliSonucu(tarif, kod, stl, sunucuAd, olcuTutmadi) {
     yerel.sunucuSonucu(tarif, kod, stl, sunucuAd, "dil modeli");
     durum(olcuTutmadi ? "Dil modeli modeli oluşturdu ama istenen ölçü tutmadı; ölçüleri düzenleyebilirsin." :
@@ -1094,4 +1135,6 @@ window.__yz = {
   vur: (x, y) => { isinla({ clientX: x, clientY: y }); return ray.intersectObjects(duzenGrup.children.filter(c => c.userData.tip), false).map(v => v.object.userData.tip); },
   surukle: () => surukle && { tip: surukle.u.tip, oynadi: surukle.oynadi, yeni: surukle.yeni },
   model: () => model,
+  kamera: () => ({ konum: kamera.position.toArray(), hedef: kontrol.target.toArray(), near: kamera.near, far: kamera.far,
+                   parca: parca ? parca.geometry.boundingBox : null, izgara: izgara.visible }),
 };
