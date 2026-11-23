@@ -311,7 +311,7 @@ async function olustur(tarif) {
   tarif = (tarif ?? $("tarif").value).trim();
   if (!api) return;
   // biblo / figur / heykel: organik sekil -> yerel yapay zeka (resim -> derinlik -> 3B), yalniz yazicinin bilgisayarinda
-  if (/biblo|figür|figur|heykel|oyuncak figür|aksiyon figürü|karakter|maket|minyatür|araba|otomobil|motosiklet|kamyon|uçak|gemi|tren|traktör/i.test(tarif)) {
+  if (/biblo|figür|figur|heykel|oyuncak figür|aksiyon figürü|karakter|maket|minyatür|araba|otomobil|motosiklet|kamyon|uçak|gemi|tren\b|traktör/i.test(tarif)) {
     if (yerel.biblo) { yerel.biblo(tarif); return; }
     durum("Biblo/figür üretimi yerel yapay zekâ ister; yazıcının bilgisayarındaki uygulamada çalışır (bu sitede kasa ve hazır nesneler var).", "uyari");
     return;
@@ -321,7 +321,7 @@ async function olustur(tarif) {
     // yazicinin bilgisayarinda: hazir sablonlarda olmayan tarifi dil modeline sor
     // mekanik parca (delik, vida, flans...) dil modeline (OpenSCAD kodu); gercek bir sey ("tofaş slx yap", "eyfel kulesi")
     // biblo yoluna: sistem once Vikipedi'de arastirir, sonra resim -> 3B
-    const mekanik = /delik|vida|cıvata|civata|somun|flanş|flans|adaptör|adaptor|braket|bağlantı|dişli|disli|menteşe|klips|aparat|yuva|mil|rulman|boru|plaka|kutu|kasa|tutucu|parça|mm/i;
+    const mekanik = /delik|vida|cıvata|civata|somun|flanş|flans|adaptör|adaptor|braket|bağlantı|dişli|disli|menteşe|klips|aparat|yuva|\bmil\b|rulman|boru|plaka|kutu|kasa|tutucu|parça|mm\b/i;
     if (yerel.biblo && /tanınmadı/.test(e.message) && !mekanik.test(tarif)) { yerel.biblo(tarif); return; }
     if (yerel.dilModeli && /tanınmadı/.test(e.message)) { yerel.dilModeli(tarif); return; }
     durum(e.message, "uyari"); return;
