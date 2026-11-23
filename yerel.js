@@ -47,7 +47,7 @@ export function baslat(ctx) {
       const yigin = kaynak && eski && eski.sunucuAd === kaynak ? [...(eski.onceki || []), kaynak] : [];
       ctx.bibloSonucu(tarif, stl, c.ad, { ...s, onceki: yigin }, kaynak && eski ? eski.id : null);
       ctx.durum(`Biblo hazır: ${s.olcu.map(x => x.toFixed(0)).join(" × ")} mm` + (s.plan ? `, ${s.plan.length} renk (filament sırası aşağıda)` : ", tek renk") +
-                (s.kaynak ? ` · Araştırma: Vikipedi – ${s.kaynak.baslik}` : "") + `. Beğenmezsen "Başka bir tane dene".`, "iyi");
+                (s.kaynak ? ` · Araştırma: Vikipedi – ${s.kaynak.baslik}` : "") + (s.referans ? ` · Taslak: gerçek fotoğraftan (Commons – ${s.referans.baslik.replace(/^File:/, "")})` : "") + `. Beğenmezsen "Başka bir tane dene".`, "iyi");
     } catch (e) {
       ctx.durum("Biblo: " + e.message, "kotu");
     } finally {
